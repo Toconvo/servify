@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  servify:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_HOST=postgres
+      - REDIS_HOST=redis
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - servify-network
+
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_DB: servify
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - servify-network
+
+  redis:
+    image: redis:6-alpine
+    networks:
+      - servify-network
+
+volumes:
+  postgres_data:
+
+networks:
+  servify-network:
+    driver: bridge
