@@ -1,1 +1,1 @@
-# servify.chat
+# servify.cloud
