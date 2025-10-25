@@ -16,6 +16,9 @@ import (
     "servify/internal/config"
     "servify/internal/handlers"
     "servify/internal/services"
+    "servify/internal/observability"
+    "go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+    gormtracing "gorm.io/plugin/opentelemetry/tracing"
     "gorm.io/gorm"
     "gorm.io/gorm/logger"
     "gorm.io/driver/postgres"
@@ -41,15 +44,26 @@ func run(cmd *cobra.Command, args []string) {
     cfg := config.Load()
 
 	// 初始化日志系统
-	if err := config.InitLogger(cfg); err != nil {
-		logrus.Fatalf("Failed to initialize logger: %v", err)
-	}
+    if err := config.InitLogger(cfg); err != nil {
+        logrus.Fatalf("Failed to initialize logger: %v", err)
+    }
+
+    // OpenTelemetry 初始化（可选）
+    if shutdown, err := observability.SetupTracing(context.Background(), cfg); err == nil {
+        defer func() { _ = shutdown(context.Background()) }()
+    } else {
+        logrus.Warnf("init tracing: %v", err)
+    }
 
     // 初始化数据库
     dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=UTC", cfg.Database.Host, cfg.Database.User, cfg.Database.Password, cfg.Database.Name, cfg.Database.Port)
     db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{ Logger: logger.Default.LogMode(logger.Warn) })
     if err != nil {
         logrus.Warnf("DB connect failed, message persistence disabled: %v", err)
+    }
+    // GORM OTel 插件
+    if db != nil && cfg.Monitoring.Tracing.Enabled {
+        _ = db.Use(gormtracing.NewPlugin())
     }
 
     // 初始化服务
@@ -120,12 +134,15 @@ func run(cmd *cobra.Command, args []string) {
 }
 
 func setupRouter(wsHub *services.WebSocketHub, webrtcService *services.WebRTCService, messageRouter *services.MessageRouter) *gin.Engine {
-	router := gin.New()
+    router := gin.New()
 
-	// 中间件
-	router.Use(gin.Logger())
-	router.Use(gin.Recovery())
-	router.Use(corsMiddleware())
+    // 中间件
+    router.Use(gin.Logger())
+    router.Use(gin.Recovery())
+    router.Use(corsMiddleware())
+    // OTel 中间件
+    // 注意：标准 CLI 未持有 cfg，此处仅使用默认服务名
+    router.Use(otelgin.Middleware("servify"))
 
 	// 健康检查
 	healthHandler := handlers.NewHealthHandler()

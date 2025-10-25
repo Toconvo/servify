@@ -16,10 +16,13 @@ import (
     "servify/internal/models"
     "servify/internal/services"
     "servify/pkg/weknora"
+    "servify/internal/observability"
 
     "github.com/gin-gonic/gin"
     "github.com/sirupsen/logrus"
     "github.com/spf13/viper"
+    "go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+    gormtracing "gorm.io/plugin/opentelemetry/tracing"
     "gorm.io/driver/postgres"
     "gorm.io/gorm"
     "gorm.io/gorm/logger"
@@ -89,9 +92,20 @@ func main() {
     }
     appLogger := logrus.StandardLogger()
 
+    // OpenTelemetry 初始化（可选）
+    shutdownOTel, err := observability.SetupTracing(context.Background(), cfg)
+    if err != nil {
+        appLogger.Warnf("init tracing: %v", err)
+    } else {
+        defer func() { _ = shutdownOTel(context.Background()) }()
+    }
+
     db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{ Logger: logger.Default.LogMode(logger.Info) })
     if err != nil {
         appLogger.Fatalf("Failed to connect to database: %v", err)
+    }
+    if cfg.Monitoring.Tracing.Enabled {
+        _ = db.Use(gormtracing.NewPlugin())
     }
 
     // 根据需要迁移（此处默认迁移，生产可改为条件控制）
@@ -152,6 +166,10 @@ func main() {
     r.Use(gin.Logger())
     r.Use(gin.Recovery())
     r.Use(corsMiddleware())
+    // OpenTelemetry Gin 中间件
+    if cfg.Monitoring.Tracing.Enabled {
+        r.Use(otelgin.Middleware(cfg.Monitoring.Tracing.ServiceName))
+    }
 
     // 健康检查（增强版）
     healthHandler := handlers.NewEnhancedHealthHandler(cfg, aiService)

@@ -39,6 +39,23 @@
 - `docker-compose -f docker-compose.yml -f docker-compose.weknora.yml up -d`
 - 将 `config.weknora.yml` 挂载为容器内默认配置，并通过 `DB_*`/`SERVIFY_*` 覆盖运行参数
 
+### 可观测性（OpenTelemetry）
+
+- 配置（config.yml）下 `monitoring.tracing`：
+```yaml
+monitoring:
+  tracing:
+    enabled: true
+    endpoint: http://localhost:4317
+    insecure: true
+    sample_ratio: 0.1
+    service_name: servify
+```
+- 本地体验链路追踪：
+  - `make docker-up-observ` 启动 OTel Collector + Jaeger
+  - 浏览器打开 Jaeger: http://localhost:16686
+  - 运行服务后访问接口，观察 Trace
+
 ### 验收清单（Smoke Test）
 
 1) 启动（本地或 Compose）

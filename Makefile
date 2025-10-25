@@ -1,6 +1,6 @@
 # Servify Makefile
 
-.PHONY: help build build-cli build-weknora run run-cli run-weknora migrate migrate-seed test clean docker-build docker-run docker-up-weknora docker-down docker-logs-weknora
+.PHONY: help build build-cli build-weknora run run-cli run-weknora migrate migrate-seed test clean docker-build docker-run docker-up-weknora docker-down docker-logs-weknora docker-up-observ docker-down-observ
 
 # Default target
 help:
@@ -20,6 +20,8 @@ help:
 	@echo "  docker-up-weknora - Up WeKnora compose (server+weknora+db)"
 	@echo "  docker-down      - Down compose services"
 	@echo "  docker-logs-weknora - Tail servify logs"
+	@echo "  docker-up-observ    - Up OTel Collector + Jaeger"
+	@echo "  docker-down-observ  - Down observability stack"
 	@echo "  docker-stop   - Stop Docker Compose services"
 
 # Build the application
@@ -95,6 +97,14 @@ docker-down:
 docker-logs-weknora:
 	@echo "Tailing servify logs..."
 	docker-compose -f docker-compose.yml -f docker-compose.weknora.yml logs -f servify
+
+docker-up-observ:
+	@echo "Starting observability stack (OTel Collector + Jaeger)..."
+	docker-compose -f docker-compose.observability.yml up -d
+
+docker-down-observ:
+	@echo "Stopping observability stack..."
+	docker-compose -f docker-compose.observability.yml down -v
 
 # Stop Docker Compose services
 docker-stop:

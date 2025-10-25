@@ -1,15 +1,19 @@
 package weknora
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"time"
+    "bytes"
+    "context"
+    "encoding/json"
+    "fmt"
+    "io"
+    "net/http"
+    "time"
 
-	"github.com/sirupsen/logrus"
+    "github.com/sirupsen/logrus"
+    "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+    "go.opentelemetry.io/otel"
+    "go.opentelemetry.io/otel/attribute"
+    "go.opentelemetry.io/otel/codes"
 )
 
 // Client WeKnora HTTP 客户端
@@ -52,16 +56,14 @@ func NewClient(config *Config, logger *logrus.Logger) *Client {
 		logger = logrus.New()
 	}
 
-	return &Client{
-		baseURL:  config.BaseURL,
-		apiKey:   config.APIKey,
-		tenantID: config.TenantID,
-		httpClient: &http.Client{
-			Timeout: config.Timeout,
-		},
-		logger: logger,
-		config: config,
-	}
+    return &Client{
+        baseURL:  config.BaseURL,
+        apiKey:   config.APIKey,
+        tenantID: config.TenantID,
+        httpClient: &http.Client{ Timeout: config.Timeout, Transport: otelhttp.NewTransport(http.DefaultTransport) },
+        logger: logger,
+        config: config,
+    }
 }
 
 // 私有方法：创建 HTTP 请求
@@ -97,11 +99,17 @@ func (c *Client) createRequest(ctx context.Context, method, endpoint string, bod
 
 // 私有方法：执行请求
 func (c *Client) doRequest(req *http.Request, result interface{}) error {
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("http request failed: %w", err)
-	}
-	defer resp.Body.Close()
+    tracer := otel.Tracer("servify/weknora-client")
+    ctx, span := tracer.Start(req.Context(), "WeKnora.doRequest")
+    span.SetAttributes(attribute.String("method", req.Method), attribute.String("url", req.URL.String()))
+    defer span.End()
+
+    resp, err := c.httpClient.Do(req.WithContext(ctx))
+    if err != nil {
+        span.SetStatus(codes.Error, err.Error())
+        return fmt.Errorf("http request failed: %w", err)
+    }
+    defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -113,13 +121,15 @@ func (c *Client) doRequest(req *http.Request, result interface{}) error {
 	c.logger.Debugf("WeKnora API Response: %d %s", resp.StatusCode, string(body))
 
 	// 检查 HTTP 状态码
-	if resp.StatusCode >= 400 {
-		var errResp ErrorResponse
-		if err := json.Unmarshal(body, &errResp); err == nil {
-			return fmt.Errorf("API error [%d]: %s (code: %s)", resp.StatusCode, errResp.Error, errResp.ErrorCode)
-		}
-		return fmt.Errorf("API error [%d]: %s", resp.StatusCode, string(body))
-	}
+    if resp.StatusCode >= 400 {
+        var errResp ErrorResponse
+        if err := json.Unmarshal(body, &errResp); err == nil {
+            span.SetStatus(codes.Error, errResp.Error)
+            return fmt.Errorf("API error [%d]: %s (code: %s)", resp.StatusCode, errResp.Error, errResp.ErrorCode)
+        }
+        span.SetStatus(codes.Error, fmt.Sprintf("status %d", resp.StatusCode))
+        return fmt.Errorf("API error [%d]: %s", resp.StatusCode, string(body))
+    }
 
 	// 解析响应
 	if result != nil {

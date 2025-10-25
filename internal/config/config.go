@@ -116,10 +116,11 @@ type LogConfig struct {
 }
 
 type MonitoringConfig struct {
-	Enabled     bool                      `yaml:"enabled"`
-	MetricsPath string                    `yaml:"metrics_path"`
-	Performance PerformanceMonitorConfig  `yaml:"performance"`
-	HealthChecks HealthChecksConfig       `yaml:"health_checks"`
+    Enabled     bool                      `yaml:"enabled"`
+    MetricsPath string                    `yaml:"metrics_path"`
+    Performance PerformanceMonitorConfig  `yaml:"performance"`
+    HealthChecks HealthChecksConfig       `yaml:"health_checks"`
+    Tracing     TracingConfig             `yaml:"tracing"`
 }
 
 type PerformanceMonitorConfig struct {
@@ -128,10 +129,19 @@ type PerformanceMonitorConfig struct {
 }
 
 type HealthChecksConfig struct {
-	Database bool `yaml:"database"`
-	Redis    bool `yaml:"redis"`
-	WeKnora  bool `yaml:"weknora"`
-	OpenAI   bool `yaml:"openai"`
+    Database bool `yaml:"database"`
+    Redis    bool `yaml:"redis"`
+    WeKnora  bool `yaml:"weknora"`
+    OpenAI   bool `yaml:"openai"`
+}
+
+// TracingConfig OpenTelemetry 追踪配置
+type TracingConfig struct {
+    Enabled     bool    `yaml:"enabled"`
+    Endpoint    string  `yaml:"endpoint"`     // OTLP gRPC 端点，例如 http://otel-collector:4317 或 0.0.0.0:4317
+    Insecure    bool    `yaml:"insecure"`     // 是否使用明文（本地/开发）
+    SampleRatio float64 `yaml:"sample_ratio"` // 采样率 0.0~1.0
+    ServiceName string  `yaml:"service_name"` // 自定义服务名，缺省使用 "servify"
 }
 
 type SecurityConfig struct {
@@ -248,20 +258,27 @@ func GetDefaultConfig() *Config {
 			MaxBackups: 3,
 			Compress:   true,
 		},
-		Monitoring: MonitoringConfig{
-			Enabled:     true,
-			MetricsPath: "/metrics",
-			Performance: PerformanceMonitorConfig{
-				SlowQueryThreshold:   1 * time.Second,
-				EnableRequestLogging: true,
-			},
-			HealthChecks: HealthChecksConfig{
-				Database: true,
-				Redis:    true,
-				WeKnora:  true,
-				OpenAI:   false,
-			},
-		},
+        Monitoring: MonitoringConfig{
+            Enabled:     true,
+            MetricsPath: "/metrics",
+            Performance: PerformanceMonitorConfig{
+                SlowQueryThreshold:   1 * time.Second,
+                EnableRequestLogging: true,
+            },
+            HealthChecks: HealthChecksConfig{
+                Database: true,
+                Redis:    true,
+                WeKnora:  true,
+                OpenAI:   false,
+            },
+            Tracing: TracingConfig{
+                Enabled:     false,
+                Endpoint:    "http://localhost:4317",
+                Insecure:    true,
+                SampleRatio: 0.1,
+                ServiceName: "servify",
+            },
+        },
 		Security: SecurityConfig{
 			CORS: CORSConfig{
 				Enabled:        true,

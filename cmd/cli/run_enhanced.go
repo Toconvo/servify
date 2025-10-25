@@ -17,6 +17,9 @@ import (
     "servify/internal/handlers"
     "servify/internal/services"
     "servify/pkg/weknora"
+    "servify/internal/observability"
+    "go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+    gormtracing "gorm.io/plugin/opentelemetry/tracing"
     "gorm.io/gorm"
     "gorm.io/gorm/logger"
     "gorm.io/driver/postgres"
@@ -42,9 +45,16 @@ func run(cmd *cobra.Command, args []string) {
     cfg := config.Load()
 
 	// 初始化日志系统
-	if err := config.InitLogger(cfg); err != nil {
-		logrus.Fatalf("Failed to initialize logger: %v", err)
-	}
+    if err := config.InitLogger(cfg); err != nil {
+        logrus.Fatalf("Failed to initialize logger: %v", err)
+    }
+
+    // OpenTelemetry 初始化（可选）
+    if shutdown, err := observability.SetupTracing(context.Background(), cfg); err == nil {
+        defer func() { _ = shutdown(context.Background()) }()
+    } else {
+        logrus.Warnf("init tracing: %v", err)
+    }
 
 	logrus.Info("🚀 Starting Servify with WeKnora integration...")
 
@@ -53,6 +63,9 @@ func run(cmd *cobra.Command, args []string) {
     db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{ Logger: logger.Default.LogMode(logger.Warn) })
     if err != nil {
         logrus.Warnf("DB connect failed, message persistence disabled: %v", err)
+    }
+    if db != nil && cfg.Monitoring.Tracing.Enabled {
+        _ = db.Use(gormtracing.NewPlugin())
     }
 
     // 初始化基础服务
@@ -212,7 +225,10 @@ func setupEnhancedRouter(
 	// 中间件
 	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
-	router.Use(enhancedCorsMiddleware(cfg))
+    router.Use(enhancedCorsMiddleware(cfg))
+    if cfg.Monitoring.Tracing.Enabled {
+        router.Use(otelgin.Middleware(cfg.Monitoring.Tracing.ServiceName))
+    }
 
 	// 速率限制中间件（如果启用）
 	if cfg.Security.RateLimiting.Enabled {

@@ -1,17 +1,21 @@
 package services
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"strings"
-	"time"
+    "bytes"
+    "context"
+    "encoding/json"
+    "fmt"
+    "io"
+    "net/http"
+    "strings"
+    "time"
 
-	"github.com/sirupsen/logrus"
-	"servify/internal/models"
+    "github.com/sirupsen/logrus"
+    "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+    "go.opentelemetry.io/otel"
+    "go.opentelemetry.io/otel/attribute"
+    "go.opentelemetry.io/otel/codes"
+    "servify/internal/models"
 )
 
 type AIService struct {
@@ -55,16 +59,17 @@ type AIResponse struct {
 }
 
 func NewAIService(apiKey, baseURL string) *AIService {
-	return &AIService{
-		openAIAPIKey:  apiKey,
-		openAIBaseURL: baseURL,
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
-		knowledgeBase: &KnowledgeBase{
-			documents: []models.KnowledgeDoc{},
-		},
-	}
+    return &AIService{
+        openAIAPIKey:  apiKey,
+        openAIBaseURL: baseURL,
+        client: &http.Client{
+            Timeout:   30 * time.Second,
+            Transport: otelhttp.NewTransport(http.DefaultTransport),
+        },
+        knowledgeBase: &KnowledgeBase{
+            documents: []models.KnowledgeDoc{},
+        },
+    }
 }
 
 func (s *AIService) ProcessQuery(ctx context.Context, query string, sessionID string) (*AIResponse, error) {
@@ -110,9 +115,14 @@ func (s *AIService) buildPrompt(query string, docs []models.KnowledgeDoc) string
 }
 
 func (s *AIService) callOpenAI(ctx context.Context, prompt string) (string, error) {
-	if s.openAIAPIKey == "" {
-		return s.getFallbackResponse(prompt), nil
-	}
+    tracer := otel.Tracer("servify/ai")
+    ctx, span := tracer.Start(ctx, "AIService.callOpenAI")
+    span.SetAttributes(attribute.String("model", "gpt-3.5-turbo"))
+    defer span.End()
+
+    if s.openAIAPIKey == "" {
+        return s.getFallbackResponse(prompt), nil
+    }
 	
 	request := OpenAIRequest{
 		Model: "gpt-3.5-turbo",
@@ -140,11 +150,12 @@ func (s *AIService) callOpenAI(ctx context.Context, prompt string) (string, erro
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.openAIAPIKey))
 	
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
+    resp, err := s.client.Do(req)
+    if err != nil {
+        span.SetStatus(codes.Error, err.Error())
+        return "", fmt.Errorf("failed to send request: %w", err)
+    }
+    defer resp.Body.Close()
 	
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -152,19 +163,22 @@ func (s *AIService) callOpenAI(ctx context.Context, prompt string) (string, erro
 	}
 	
 	var openAIResp OpenAIResponse
-	if err := json.Unmarshal(body, &openAIResp); err != nil {
-		return "", fmt.Errorf("failed to unmarshal response: %w", err)
-	}
+    if err := json.Unmarshal(body, &openAIResp); err != nil {
+        span.SetStatus(codes.Error, err.Error())
+        return "", fmt.Errorf("failed to unmarshal response: %w", err)
+    }
 	
-	if openAIResp.Error != nil {
-		return "", fmt.Errorf("OpenAI API error: %s", openAIResp.Error.Message)
-	}
+    if openAIResp.Error != nil {
+        span.SetStatus(codes.Error, openAIResp.Error.Message)
+        return "", fmt.Errorf("OpenAI API error: %s", openAIResp.Error.Message)
+    }
 	
-	if len(openAIResp.Choices) == 0 {
-		return "", fmt.Errorf("no response from OpenAI")
-	}
+    if len(openAIResp.Choices) == 0 {
+        span.SetStatus(codes.Error, "no response choices")
+        return "", fmt.Errorf("no response from OpenAI")
+    }
 	
-	return openAIResp.Choices[0].Message.Content, nil
+    return openAIResp.Choices[0].Message.Content, nil
 }
 
 func (s *AIService) getFallbackResponse(query string) string {
