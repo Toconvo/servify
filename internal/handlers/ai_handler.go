@@ -279,42 +279,75 @@ func (h *AIHandler) ResetCircuitBreaker(c *gin.Context) {
 }
 
 // MetricsHandler 指标处理器
-type MetricsHandler struct{}
+type MetricsHandler struct{
+    wsHub          *services.WebSocketHub
+    webrtcService  *services.WebRTCService
+    aiService      services.AIServiceInterface
+    messageRouter  *services.MessageRouter
+    startedAt      time.Time
+}
 
 // NewMetricsHandler 创建指标处理器
-func NewMetricsHandler() *MetricsHandler {
-	return &MetricsHandler{}
+func NewMetricsHandler(wsHub *services.WebSocketHub, webrtc *services.WebRTCService, ai services.AIServiceInterface, router *services.MessageRouter) *MetricsHandler {
+    return &MetricsHandler{ wsHub: wsHub, webrtcService: webrtc, aiService: ai, messageRouter: router, startedAt: time.Now() }
 }
 
 // GetMetrics 获取系统指标（Prometheus 格式）
 func (h *MetricsHandler) GetMetrics(c *gin.Context) {
-	// 实现 Prometheus 指标收集
-	// 这里应该返回 Prometheus 格式的指标
+    c.Header("Content-Type", "text/plain")
 
-	c.Header("Content-Type", "text/plain")
+    // 采样运行态
+    uptime := time.Since(h.startedAt).Seconds()
+    wsClients := 0
+    webrtcConns := 0
+    if h.wsHub != nil { wsClients = h.wsHub.GetClientCount() }
+    if h.webrtcService != nil { webrtcConns = h.webrtcService.GetConnectionCount() }
 
-	// 基础系统指标
-	metrics := `# HELP servify_info Information about the Servify instance
-# TYPE servify_info gauge
-servify_info{version="1.1.0"} 1
+    var aiQueries, aiWeKnora, aiFallback int64
+    var aiAvgLatency float64
+    if enh, ok := h.aiService.(services.EnhancedAIServiceInterface); ok && enh.GetMetrics() != nil {
+        m := enh.GetMetrics()
+        aiQueries = m.QueryCount
+        aiWeKnora = m.WeKnoraUsageCount
+        aiFallback = m.FallbackUsageCount
+        aiAvgLatency = m.AverageLatency.Seconds()
+    }
 
-# HELP servify_uptime_seconds Total uptime of the Servify instance in seconds
-# TYPE servify_uptime_seconds counter
-servify_uptime_seconds %d
+    // Prometheus exposition format
+    b := &strings.Builder{}
+    fmt.Fprintf(b, "# HELP servify_info Information about the Servify instance\n")
+    fmt.Fprintf(b, "# TYPE servify_info gauge\n")
+    fmt.Fprintf(b, "servify_info{version=\"1.1.0\"} 1\n\n")
 
-# HELP servify_http_requests_total Total number of HTTP requests
-# TYPE servify_http_requests_total counter
-servify_http_requests_total 0
+    fmt.Fprintf(b, "# HELP servify_uptime_seconds Total uptime of the Servify instance in seconds\n")
+    fmt.Fprintf(b, "# TYPE servify_uptime_seconds counter\n")
+    fmt.Fprintf(b, "servify_uptime_seconds %.0f\n\n", uptime)
 
-# HELP servify_websocket_connections Total number of active WebSocket connections
-# TYPE servify_websocket_connections gauge
-servify_websocket_connections 0
-`
+    fmt.Fprintf(b, "# HELP servify_websocket_active_connections Active WebSocket connections\n")
+    fmt.Fprintf(b, "# TYPE servify_websocket_active_connections gauge\n")
+    fmt.Fprintf(b, "servify_websocket_active_connections %d\n\n", wsClients)
 
-	// 计算运行时间（从启动开始）
-	uptime := int64(time.Since(time.Now().Add(-time.Hour)).Seconds()) // 模拟1小时运行时间
+    fmt.Fprintf(b, "# HELP servify_webrtc_connections Active WebRTC peer connections\n")
+    fmt.Fprintf(b, "# TYPE servify_webrtc_connections gauge\n")
+    fmt.Fprintf(b, "servify_webrtc_connections %d\n\n", webrtcConns)
 
-	c.String(http.StatusOK, fmt.Sprintf(metrics, uptime))
+    fmt.Fprintf(b, "# HELP servify_ai_requests_total Total AI queries processed\n")
+    fmt.Fprintf(b, "# TYPE servify_ai_requests_total counter\n")
+    fmt.Fprintf(b, "servify_ai_requests_total %d\n\n", aiQueries)
+
+    fmt.Fprintf(b, "# HELP servify_ai_weknora_usage_total Total AI queries served via WeKnora\n")
+    fmt.Fprintf(b, "# TYPE servify_ai_weknora_usage_total counter\n")
+    fmt.Fprintf(b, "servify_ai_weknora_usage_total %d\n\n", aiWeKnora)
+
+    fmt.Fprintf(b, "# HELP servify_ai_fallback_usage_total Total AI queries served via fallback KB\n")
+    fmt.Fprintf(b, "# TYPE servify_ai_fallback_usage_total counter\n")
+    fmt.Fprintf(b, "servify_ai_fallback_usage_total %d\n\n", aiFallback)
+
+    fmt.Fprintf(b, "# HELP servify_ai_avg_latency_seconds Average AI processing latency seconds\n")
+    fmt.Fprintf(b, "# TYPE servify_ai_avg_latency_seconds gauge\n")
+    fmt.Fprintf(b, "servify_ai_avg_latency_seconds %.3f\n", aiAvgLatency)
+
+    c.String(http.StatusOK, b.String())
 }
 
 // UploadHandler 文件上传处理器

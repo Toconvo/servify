@@ -247,9 +247,9 @@ func setupEnhancedRouter(
 	router.GET("/ready", healthHandler.Ready)
 
 	// 监控端点
-	if cfg.Monitoring.Enabled {
-		router.GET(cfg.Monitoring.MetricsPath, handlers.NewMetricsHandler().GetMetrics)
-	}
+    if cfg.Monitoring.Enabled {
+        router.GET(cfg.Monitoring.MetricsPath, handlers.NewMetricsHandler(wsHub, webrtcService, aiService, messageRouter).GetMetrics)
+    }
 
 	// API 路由组
 	api := router.Group("/api/v1")

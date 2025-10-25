@@ -23,15 +23,21 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Set Go cache paths to workspace (avoid global HOME collisions)
+        run: |
+          echo "GOMODCACHE=${{ github.workspace }}/.gomodcache" >> $GITHUB_ENV
+          echo "GOCACHE=${{ github.workspace }}/.gocache" >> $GITHUB_ENV
+          mkdir -p "${{ github.workspace }}/.gomodcache" "${{ github.workspace }}/.gocache"
+
       - name: Cache Go Modules
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+            ${{ env.GOCACHE }}
+            ${{ env.GOMODCACHE }}
+          key: ${{ runner.os }}-go-modcachev2-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-
+            ${{ runner.os }}-go-modcachev2-
 
       - name: Tidy
         run: go mod tidy

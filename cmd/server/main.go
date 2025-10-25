@@ -176,6 +176,11 @@ func main() {
     r.GET("/health", healthHandler.Health)
     r.GET("/ready", healthHandler.Ready)
 
+    // Prometheus Metrics（若启用）
+    if cfg.Monitoring.Enabled {
+        r.GET(cfg.Monitoring.MetricsPath, handlers.NewMetricsHandler(wsHub, webrtcService, aiService, messageRouter).GetMetrics)
+    }
+
     // API 路由组（管理类）
     api := r.Group("/api")
     handlers.RegisterCustomerRoutes(api, customerHandler(customerService, appLogger))

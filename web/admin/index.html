@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Servify 管理后台</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="/admin/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Servify 管理后台</h1>
+    <nav>
+      <button data-tab="dashboard" class="active">仪表板</button>
+      <button data-tab="tickets">工单</button>
+      <button data-tab="customers">客户</button>
+      <button data-tab="agents">客服</button>
+      <button data-tab="ai">AI 状态</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="dashboard" class="tab active">
+      <div class="cards">
+        <div class="card">
+          <h3>今日会话</h3>
+          <div id="stat_sessions">-</div>
+        </div>
+        <div class="card">
+          <h3>已解决工单</h3>
+          <div id="stat_tickets_resolved">-</div>
+        </div>
+        <div class="card">
+          <h3>在线客服</h3>
+          <div id="stat_agents_online">-</div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>平台接入</h3>
+        <pre id="platforms_json" class="json"></pre>
+      </div>
+    </section>
+
+    <section id="tickets" class="tab">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>工单列表</h3>
+          <button id="btn_new_ticket">新建工单</button>
+        </div>
+        <table id="tbl_tickets">
+          <thead>
+            <tr><th>ID</th><th>标题</th><th>状态</th><th>优先级</th><th>客户</th><th>操作</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <h3>新建工单</h3>
+        <form id="form_ticket">
+          <input name="title" placeholder="标题" required />
+          <input name="customer_id" placeholder="客户ID(可选)" />
+          <select name="priority">
+            <option value="low">低</option>
+            <option value="medium" selected>中</option>
+            <option value="high">高</option>
+          </select>
+          <textarea name="content" placeholder="问题描述"></textarea>
+          <button type="submit">创建</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="customers" class="tab">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>客户</h3>
+          <button id="btn_new_customer">新建客户</button>
+        </div>
+        <table id="tbl_customers">
+          <thead>
+            <tr><th>ID</th><th>名称</th><th>邮箱</th><th>标签</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <h3>新建客户</h3>
+        <form id="form_customer">
+          <input name="name" placeholder="名称" required />
+          <input name="email" placeholder="邮箱" />
+          <input name="tags" placeholder="标签(逗号分隔)" />
+          <button type="submit">创建</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="agents" class="tab">
+      <div class="panel">
+        <h3>客服</h3>
+        <table id="tbl_agents">
+          <thead>
+            <tr><th>ID</th><th>姓名</th><th>状态</th><th>在线</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="ai" class="tab">
+      <div class="panel">
+        <h3>AI 服务状态</h3>
+        <pre id="ai_status" class="json"></pre>
+      </div>
+      <div class="panel">
+        <h3>测试 AI 回答</h3>
+        <div class="row">
+          <input id="ai_query" placeholder="输入提问..." />
+          <button id="btn_ai_query">发送</button>
+        </div>
+        <pre id="ai_answer" class="json"></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer>Servify © 2025</footer>
+  <script src="/admin/main.js"></script>
+</body>
+</html>

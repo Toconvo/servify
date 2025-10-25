@@ -95,6 +95,13 @@ curl -s http://localhost:8080/api/v1/webrtc/connections | jq
 
 > 注意：消息现已落库（Message），若未配置数据库则回退日志；WeKnora 不可用时会降级到标准 AI。
 
+### 管理后台（MVP）
+- 打开: http://localhost:8080/admin/
+- 功能：仪表板（平台接入、在线客服统计）、工单列表/创建、客户列表/创建、AI 状态与测试
+- 说明：管理类 API 由 `cmd/server` 提供，建议使用：
+  - `go run cmd/server/main.go --host=0.0.0.0 --port=8080`（或 `make run-cli` 的增强版本若已接入）
+  - 首次使用请配置数据库并执行迁移（见上文 migrate）
+
 ## 系统概述
 
 ### 核心功能 (v1.0)
@@ -127,41 +134,228 @@ curl -s http://localhost:8080/api/v1/webrtc/connections | jq
 - **知识库**: WeKnora (腾讯开源 RAG 框架)
 - **消息队列**: Redis/RabbitMQ
 
-### 系统架构图
+### 系统架构图（Mermaid，含 OTel/坐席/后台/监控/多租户）
+
+```mermaid
+flowchart LR
+  subgraph Client[前端/终端]
+    W[[Web 客户端 SDK/Widget]]
+    A[[坐席控制台（Agent Console）]]
+    ADM[[后台管理（Admin UI）]]
+    TP[第三方渠道\nWeChat/Telegram/Feishu/QQ]
+  end
+
+  subgraph Edge[接入层]
+    GIN[API Gateway\nGin + CORS + Auth]
+    WS[WebSocket Hub\n会话/广播/AI 注入]
+    SIG[Signaling\nWS 中继 SDP/ICE]
+  end
+
+  subgraph Core[核心服务]
+    MR[消息路由\n多平台统一消息]
+    PION[WebRTC 服务\nPion + DataChannel]
+    AI[AI 服务\n标准/增强(WeKnora)]
+  end
+
+  subgraph Data[数据与缓存]
+    PG[(PostgreSQL\npgvector)]
+    R[(Redis)]
+    OBJ[(对象存储\nS3/MinIO)]
+  end
+
+  subgraph Obs[可观测性]
+    OTel[OpenTelemetry SDK\n(Gin/GORM/HTTP/Pion)]
+    COL[OTel Collector]
+    JG[Jaeger\nTraces]
+    PM[Prometheus\nMetrics]
+    LK[Loki/ELK\nLogs]
+  end
+
+  subgraph KB[外部知识库/AI]
+    WKN[WeKnora API\n租户隔离]
+    OAI[OpenAI / LLM]
+  end
+
+  subgraph RTC[打洞/中继]
+    STUN[(STUN)]
+    TURN[(TURN\n可选 coturn)]
+  end
+
+  W -- ws/http --> GIN
+  A -- ws/http --> GIN
+  ADM -- http --> GIN
+  TP -- webhook/polling --> MR
+
+  GIN -- upgrade ws --> WS
+  WS --> SIG
+  SIG --> PION
+  PION -.-> STUN
+  PION -.-> TURN
+
+  MR <--> AI
+  MR <--> PG
+  MR <--> R
+  AI <--> WKN
+  AI --> OAI
+  AI <--> PG
+  GIN --> MR
+
+  GIN ----> W
+  GIN ----> A
+  GIN ----> ADM
+
+  OTel ==> COL ==> JG
+  COL ==> PM
+  COL ==> LK
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    客户端 SDK                                │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
-│  │   React     │  │     Vue     │  │  Vanilla JS │        │
-│  └─────────────┘  └─────────────┘  └─────────────┘        │
-└─────────────────────────────────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    网关服务                                  │
-│           (Go + Gin + WebSocket)                            │
-└─────────────────────────────────────────────────────────────┘
-                           │
-        ┌─────────────────┼─────────────────┐
-        ▼                 ▼                 ▼
-┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-│  WebRTC服务 │  │  AI智能客服  │  │  消息路由    │
-│ (Go+Pion)   │  │   服务      │  │    服务     │
-└─────────────┘  └─────────────┘  └─────────────┘
-                       │                   │
-                       ▼                   ▼
-              ┌─────────────┐    ┌─────────────┐
-              │  WeKnora    │    │  第三方集成  │
-              │  知识库服务  │    │  (微信/QQ等) │
-              │  (RAG框架)  │    └─────────────┘
-              └─────────────┘
-                       │
-         ┌─────────────┼─────────────┐
-         ▼             ▼             ▼
-    ┌────────┐   ┌─────────┐   ┌──────────┐
-    │PostgreSQL  │  Vector  │   │ElasticSch│
-    │ (数据库)   │  Index   │   │ (检索)   │
-    └────────┘   └─────────┘   └──────────┘
+
+#### 时序：对话 + AI
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C as 客户 Web SDK
+  participant GW as Gin/WS Hub
+  participant MR as 消息路由
+  participant AI as AI 服务
+  participant WKN as WeKnora
+  participant LLM as OpenAI/LLM
+  participant DB as PostgreSQL
+  participant OTel as OpenTelemetry
+
+  C->>GW: ws: text-message
+  GW->>MR: 路由(会话/平台)
+  MR->>DB: 持久化消息
+  MR->>AI: ProcessQuery(query, session)
+  AI->>WKN: Search(hybrid) [可用优先]
+  WKN-->>AI: 相关文档/片段
+  AI->>LLM: Prompt(附知识片段)
+  LLM-->>AI: 回答内容
+  AI-->>MR: AIResponse(content, confidence, source)
+  MR-->>GW: ws: ai-response
+  GW-->>C: ws: ai-response
+  Note over OTel, C: 全链路埋点：Gin/GORM/HTTP/WS
+```
+
+#### 时序：远程协助（屏幕共享 + 远程控制）
+```mermaid
+sequenceDiagram
+  autonumber
+  participant U as 用户浏览器 (SDK)
+  participant GW as WS/Signaling
+  participant RTC as WebRTC(Pion)
+  participant ST as STUN/TURN
+  participant AG as 坐席端 (Agent Console)
+
+  U->>U: getDisplayMedia()
+  U->>GW: ws webrtc-offer(SDP)
+  GW->>RTC: 转交 Offer
+  RTC->>AG: 通知坐席准备/应答
+  AG->>GW: ws webrtc-answer(SDP)
+  GW->>U: ws webrtc-answer
+  U->>GW: ws ICE Candidate
+  AG->>GW: ws ICE Candidate
+  GW->>RTC: 转交 Candidates
+  RTC-.->ST: STUN/TURN 协商
+  Note over U,AG: 成功后媒体走 P2P，信令仍经 WS；DataChannel 传输远控事件
+
+  par 数据通道（远程控制）
+    U->>AG: DataChannel: 指针/键盘事件
+    AG->>U: DataChannel: 控制反馈/高亮
+  end
+```
+
+#### 多租户（Tenancy）
+```mermaid
+flowchart TB
+  subgraph TenantA[租户A]
+    AUI[Agent/Admin UI]
+    AAPI[API 请求\n带 X-Tenant-ID]
+    ADB[(Schema/DB_A)]
+  end
+  subgraph TenantB[租户B]
+    BUI[Agent/Admin UI]
+    BAPI[API 请求\n带 X-Tenant-ID]
+    BDB[(Schema/DB_B)]
+  end
+  GIN[Gateway]
+  GIN -->|Authn/Authz| AAPI
+  GIN -->|Authn/Authz| BAPI
+  AAPI -->|Row-level: tenant_id| ADB
+  BAPI -->|Row-level: tenant_id| BDB
+  note right of GIN: 策略可选\n- 独立库/Schema\n- 共享库 + tenant_id\n- WeKnora: X-Tenant-ID
+```
+
+#### 可观测性（OpenTelemetry）
+```mermaid
+flowchart LR
+  App[Servify 应用\nGin/GORM/HTTP/Pion] -- SDK --> OTel[OTel SDK]
+  OTel --> COL[OTel Collector]
+  COL --> JG[Jaeger: Traces]
+  COL --> PM[Prometheus: Metrics]
+  COL --> LG[Loki/Elastic: Logs]
+```
+
+### 监控与指标（Prometheus）
+
+启用方式（config.yml）：
+```yaml
+monitoring:
+  enabled: true
+  metrics_path: /metrics
+  tracing:
+    enabled: true
+    endpoint: http://localhost:4317
+    insecure: true
+    service_name: servify
+```
+
+核心指标（后端导出，前端指标通过 SDK 上报聚合后导出）：
+
+| 指标名 | 类型 | 标签 | 说明 |
+|---|---|---|---|
+| `servify_info` | gauge | `version` | 实例信息 |
+| `servify_uptime_seconds` | counter |  | 运行时长 |
+| `servify_websocket_active_connections` | gauge |  | 活跃 WS 连接数（Agent/Client 总计） |
+| `servify_webrtc_connections` | gauge |  | 活跃 WebRTC PeerConnection 数量 |
+| `servify_ai_requests_total` | counter |  | AI 查询总次数（标准/增强） |
+| `servify_ai_weknora_usage_total` | counter |  | 走 WeKnora 的查询次数 |
+| `servify_ai_fallback_usage_total` | counter |  | 走本地/降级 KB 的查询次数 |
+| `servify_ai_avg_latency_seconds` | gauge |  | AI 平均耗时（秒） |
+
+建议扩展（前端 SDK/后台/坐席上报并在后端聚合导出）：
+
+| 组件 | 指标名 | 类型 | 标签 | 说明 |
+|---|---|---|---|---|
+| SDK | `servify_sdk_ws_reconnects_total` | counter | `reason` | 浏览器侧重连次数 |
+| SDK | `servify_sdk_messages_sent_total` | counter | `type` | 发送消息数量（text/webrtc-*） |
+| SDK | `servify_sdk_messages_recv_total` | counter | `type` | 接收消息数量 |
+| SDK | `servify_sdk_webrtc_sessions_total` | counter |  | 发起远程协助会话次数 |
+| Agent | `servify_agent_online_gauge` | gauge | `tenant` | 在线坐席数 |
+| Agent | `servify_agent_takeover_total` | counter | `reason` | 转人工次数 |
+| Admin | `servify_admin_actions_total` | counter | `action` | 后台操作次数（建单/分配/关闭等） |
+| Router | `servify_router_messages_total` | counter | `platform` | 统一路由消息数（web/wechat/telegram/...） |
+| WebRTC | `servify_webrtc_datachannel_msgs_total` | counter | `dir` | DataChannel 消息数（up/down） |
+
+Grafana 仪表盘建议：
+- 概览：WS 活跃连接（gauge）、AI QPS（rate）、AI 平均/95/99 延迟（histogram/gauge）、WeKnora 占比、Fallback 占比（pie/bar）
+- 实时通信：WebRTC 连接数、ICE 状态分布、DataChannel 消息速率（up/down）、STUN/TURN 命中率
+- 坐席运营：在线坐席数、转人工趋势、工单状态分布（打开/处理中/已解决/超时）
+- 渠道质量：各平台消息量 TopN、失败率、重试次数
+- 系统健康：错误率、CPU/Mem/GC、Go 运行时、DB 延迟与连接池、Redis 命中率
+
+示例查询（PromQL）：
+```promql
+// AI QPS
+rate(servify_ai_requests_total[5m])
+
+// AI 平均耗时（移动平均）
+avg_over_time(servify_ai_avg_latency_seconds[5m])
+
+// WS 活跃连接趋势
+max_over_time(servify_websocket_active_connections[5m])
+
+// WeKnora 占比（窗口内）
+rate(servify_ai_weknora_usage_total[5m]) / rate(servify_ai_requests_total[5m])
 ```
 
 ## 客户端实现

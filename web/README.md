@@ -117,3 +117,25 @@ scp -r web/* user@server:/var/www/html/
 ## 许可证
 
 MIT License - 详见 [LICENSE](../LICENSE) 文件
+## 浏览器 SDK 使用
+
+- 直接引入（UMD）：
+```html
+<script src="/sdk/servify-sdk.umd.js"></script>
+<script>
+  const client = Servify.createClient({ sessionId: 'demo_1' });
+  client.on('ai', (m) => console.log('AI:', m.content));
+  client.connect();
+  client.sendMessage('你好');
+  // 打开 /sdk-demo.html 可快速体验
+</script>
+```
+
+- 打包器（ESM）：
+```js
+import { ServifyClient } from '/sdk/servify-sdk.esm.js';
+const client = new ServifyClient({ baseUrl: 'http://localhost:8080' });
+await client.connect();
+client.sendMessage('help');
+```
+
