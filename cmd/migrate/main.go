@@ -1,28 +1,104 @@
 package main
 
 import (
+    "flag"
     "fmt"
     "log"
     "os"
+    "strconv"
     "time"
 
     "servify/internal/config"
     "servify/internal/models"
 
+    "github.com/spf13/viper"
     "gorm.io/driver/postgres"
     "gorm.io/gorm"
     "gorm.io/gorm/logger"
 )
 
+// getenvDefault returns env var value or fallback if empty
+func getenvDefault(key, def string) string {
+    if v := os.Getenv(key); v != "" {
+        return v
+    }
+    return def
+}
+
+func firstNonEmpty(vals ...string) string {
+    for _, v := range vals {
+        if v != "" {
+            return v
+        }
+    }
+    return ""
+}
+
 func main() {
-    // 加载配置（已在 CLI 层通过 viper 读取，Load 仅反序列化）
+    // 读取配置文件（可选）
+    viper.AddConfigPath(".")
+    viper.SetConfigName("config")
+    viper.SetConfigType("yaml")
+    viper.AutomaticEnv()
+    _ = viper.ReadInConfig() // 忽略未找到错误
+
     cfg := config.Load()
 
-    // 构建 Postgres DSN
-    dsn := fmt.Sprintf(
-        "host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=UTC",
-        cfg.Database.Host, cfg.Database.User, cfg.Database.Password, cfg.Database.Name, cfg.Database.Port,
+    // CLI flags / env 覆盖
+    var (
+        flagConfig string
+        flagDSN    string
+        dbHost     string
+        dbPortStr  string
+        dbUser     string
+        dbPass     string
+        dbName     string
+        dbSSLMode  string
+        dbTZ       string
+        withSeed   bool
     )
+
+    flag.StringVar(&flagConfig, "config", "", "path to config file (default: ./config.yml)")
+    flag.StringVar(&flagDSN, "dsn", os.Getenv("DB_DSN"), "Postgres DSN, if set overrides other DB flags")
+    flag.StringVar(&dbHost, "db-host", getenvDefault("DB_HOST", cfg.Database.Host), "database host")
+    flag.StringVar(&dbPortStr, "db-port", getenvDefault("DB_PORT", fmt.Sprintf("%d", cfg.Database.Port)), "database port")
+    flag.StringVar(&dbUser, "db-user", getenvDefault("DB_USER", cfg.Database.User), "database user")
+    flag.StringVar(&dbPass, "db-pass", getenvDefault("DB_PASSWORD", cfg.Database.Password), "database password")
+    flag.StringVar(&dbName, "db-name", getenvDefault("DB_NAME", cfg.Database.Name), "database name")
+    flag.StringVar(&dbSSLMode, "db-sslmode", getenvDefault("DB_SSLMODE", "disable"), "sslmode (disable, require, verify-ca, verify-full)")
+    flag.StringVar(&dbTZ, "db-timezone", getenvDefault("DB_TIMEZONE", "UTC"), "database timezone")
+    flag.BoolVar(&withSeed, "seed", false, "seed default data after migration")
+    flag.Parse()
+
+    // 如果指定了 --config，则重新加载配置文件
+    if flagConfig != "" {
+        viper.SetConfigFile(flagConfig)
+        if err := viper.ReadInConfig(); err == nil {
+            cfg = config.Load()
+        }
+    }
+
+    // 解析端口
+    if p, err := strconv.Atoi(dbPortStr); err == nil {
+        // 同步到 cfg（方便后续日志打印），非必须
+        cfg.Database.Port = p
+    }
+
+    // 组装 DSN（优先级：--dsn > 单项 DB flags/env > 配置文件）
+    dsn := flagDSN
+    if dsn == "" {
+        host := firstNonEmpty(dbHost, cfg.Database.Host)
+        user := firstNonEmpty(dbUser, cfg.Database.User)
+        pass := firstNonEmpty(dbPass, cfg.Database.Password)
+        name := firstNonEmpty(dbName, cfg.Database.Name)
+        port := dbPortStr
+        if port == "" && cfg.Database.Port != 0 {
+            port = fmt.Sprintf("%d", cfg.Database.Port)
+        }
+        ssl := dbSSLMode
+        tz := dbTZ
+        dsn = fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=%s TimeZone=%s", host, user, pass, name, port, ssl, tz)
+    }
 
     // 连接数据库
     db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
@@ -85,7 +161,7 @@ func main() {
     log.Println("Additional indexes created successfully!")
 
     // 插入默认数据
-    if len(os.Args) > 1 && os.Args[1] == "--seed" {
+    if withSeed {
         log.Println("Seeding default data...")
         seedDefaultData(db)
         log.Println("Default data seeded successfully!")

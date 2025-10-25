@@ -17,13 +17,20 @@ import (
 
     "github.com/gin-gonic/gin"
     "github.com/sirupsen/logrus"
+    "github.com/spf13/viper"
     "gorm.io/driver/postgres"
     "gorm.io/gorm"
     "gorm.io/gorm/logger"
 )
 
 func main() {
-    // 加载配置并初始化日志
+    // 读取配置文件（默认 ./config.yml）并初始化日志
+    viper.AddConfigPath(".")
+    viper.SetConfigName("config")
+    viper.SetConfigType("yaml")
+    viper.AutomaticEnv()
+    _ = viper.ReadInConfig()
+
     cfg := config.Load()
     if err := config.InitLogger(cfg); err != nil {
         logrus.Warnf("init logger: %v", err)

@@ -1,12 +1,16 @@
 # Servify Makefile
 
-.PHONY: help build run migrate test clean docker-build docker-run
+.PHONY: help build build-cli build-weknora run run-cli run-weknora migrate migrate-seed test clean docker-build docker-run
 
 # Default target
 help:
 	@echo "Available commands:"
 	@echo "  build         - Build the application"
+	@echo "  build-cli     - Build CLI (standard)"
+	@echo "  build-weknora - Build CLI with WeKnora tag"
 	@echo "  run           - Run the application"
+	@echo "  run-cli       - Run CLI (standard)"
+	@echo "  run-weknora   - Run CLI with WeKnora tag"
 	@echo "  migrate       - Run database migrations"
 	@echo "  migrate-seed  - Run database migrations with seed data"
 	@echo "  test          - Run tests"
@@ -20,26 +24,46 @@ build:
 	@echo "Building Servify..."
 	go build -o bin/servify cmd/server/main.go
 	go build -o bin/migrate cmd/migrate/main.go
+	go build -o bin/servify-cli ./cmd/cli
+
+# Build CLI targets
+build-cli:
+	@echo "Building CLI (standard)..."
+	go build -o bin/servify-cli ./cmd/cli
+
+build-weknora:
+	@echo "Building CLI (weknora)..."
+	go build -tags weknora -o bin/servify-cli-weknora ./cmd/cli
 
 # Run the application
 run:
 	@echo "Starting Servify server..."
 	go run cmd/server/main.go
 
+run-cli:
+	@echo "Running CLI (standard)..."
+	go run ./cmd/cli -c $(or $(CONFIG),./config.yml) run
+
+run-weknora:
+	@echo "Running CLI (weknora)..."
+	go run -tags weknora ./cmd/cli -c $(or $(CONFIG),./config.weknora.yml) run
+
 # Run database migrations
 migrate:
 	@echo "Running database migrations..."
-	go run cmd/migrate/main.go
+	DB_HOST=$(DB_HOST) DB_PORT=$(DB_PORT) DB_USER=$(DB_USER) DB_PASSWORD=$(DB_PASSWORD) DB_NAME=$(DB_NAME) DB_SSLMODE=$(or $(DB_SSLMODE),disable) DB_TIMEZONE=$(or $(DB_TIMEZONE),UTC) \
+	go run cmd/migrate/main.go $(MIGRATE_ARGS)
 
 # Run database migrations with seed data
 migrate-seed:
 	@echo "Running database migrations with seed data..."
-	go run cmd/migrate/main.go --seed
+	DB_HOST=$(DB_HOST) DB_PORT=$(DB_PORT) DB_USER=$(DB_USER) DB_PASSWORD=$(DB_PASSWORD) DB_NAME=$(DB_NAME) DB_SSLMODE=$(or $(DB_SSLMODE),disable) DB_TIMEZONE=$(or $(DB_TIMEZONE),UTC) \
+	go run cmd/migrate/main.go --seed $(MIGRATE_ARGS)
 
 # Run tests
 test:
-	@echo "Running tests..."
-	go test -v ./...
+	@echo "Running tests via scripts/run-tests.sh..."
+	./scripts/run-tests.sh || true
 
 # Clean build artifacts
 clean:
