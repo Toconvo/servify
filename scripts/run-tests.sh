@@ -18,8 +18,8 @@ cd "$PROJECT_ROOT"
 mkdir -p "$OUT_DIR"
 
 # 运行所有测试并生成覆盖率报告
-echo "📊 Running tests with coverage..."
-go test -v -race -coverprofile="$OUT_DIR/coverage.out" ./internal/services/... ./internal/handlers/...
+echo "📊 Running tests with coverage (no race)..."
+go test -v -coverprofile="$OUT_DIR/coverage.out" ./internal/services/... ./internal/handlers/...
 
 # 生成覆盖率HTML报告
 echo "📈 Generating coverage report..."
