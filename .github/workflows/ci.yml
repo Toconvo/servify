@@ -41,7 +41,7 @@ jobs:
 
       - name: Test
         env:
-          TEST_COVERAGE_TARGET: "0"
+          TEST_COVERAGE_TARGET: "5"
         run: make test
 
   integration:
