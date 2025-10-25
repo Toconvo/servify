@@ -1,0 +1,156 @@
+# WeKnora 集成开发环境
+# 使用方法: docker-compose -f docker-compose.yml -f docker-compose.weknora.yml up -d
+
+version: '3.8'
+
+services:
+  # WeKnora 主服务
+  weknora:
+    image: weknora/weknora:latest  # 需要根据实际镜像名调整
+    container_name: servify_weknora
+    ports:
+      - "9000:9000"  # WeKnora API 端口
+      - "9001:9001"  # WeKnora Web UI 端口
+    environment:
+      # 数据库配置
+      - DB_TYPE=postgresql
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=servify
+      - DB_USER=postgres
+      - DB_PASSWORD=password
+
+      # Redis 配置
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+
+      # API 配置
+      - API_PORT=9000
+      - WEB_PORT=9001
+      - LOG_LEVEL=info
+
+      # 向量数据库配置
+      - VECTOR_DB=pgvector
+      - EMBEDDING_MODEL=bge-large-zh
+      - EMBEDDING_API_BASE=http://localhost:8001  # 可选：本地 embedding 服务
+
+      # OpenAI 配置（用于 embedding 和 LLM）
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+
+    volumes:
+      - weknora_data:/app/data
+      - weknora_logs:/app/logs
+      - weknora_uploads:/app/uploads
+
+    depends_on:
+      - postgres
+      - redis
+
+    networks:
+      - servify_network
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL with pgvector extension
+  postgres:
+    image: pgvector/pgvector:pg15
+    environment:
+      POSTGRES_DB: servify
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      # 启用 pgvector 扩展
+      POSTGRES_INIT_SCRIPTS: |
+        CREATE EXTENSION IF NOT EXISTS vector;
+        CREATE EXTENSION IF NOT EXISTS hstore;
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - servify_network
+
+  # Servify 主服务（增强版）
+  servify:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      # 现有配置
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8080
+      - DB_HOST=postgres
+      - REDIS_HOST=redis
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+
+      # WeKnora 集成配置
+      - WEKNORA_ENABLED=true
+      - WEKNORA_BASE_URL=http://weknora:9000
+      - WEKNORA_API_KEY=${WEKNORA_API_KEY:-default-api-key}
+      - WEKNORA_TENANT_ID=${WEKNORA_TENANT_ID:-default-tenant}
+      - WEKNORA_KB_ID=${WEKNORA_KB_ID:-default-kb}
+
+      # 降级配置
+      - FALLBACK_ENABLED=true
+      - CIRCUIT_BREAKER_ENABLED=true
+
+    depends_on:
+      - postgres
+      - redis
+      - weknora
+
+    networks:
+      - servify_network
+
+  # 可选：本地 Embedding 服务（如果不使用 OpenAI）
+  embedding-service:
+    image: sentence-transformers/all-MiniLM-L6-v2
+    container_name: servify_embedding
+    ports:
+      - "8001:8001"
+    environment:
+      - MODEL_NAME=BAAI/bge-large-zh-v1.5  # 中文优化模型
+      - MAX_BATCH_SIZE=32
+      - PORT=8001
+    volumes:
+      - embedding_models:/models
+    networks:
+      - servify_network
+    profiles:
+      - local-embedding  # 可选服务
+
+  # Elasticsearch（可选，用于增强检索）
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.10.0
+    container_name: servify_elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - servify_network
+    profiles:
+      - with-elasticsearch  # 可选服务
+
+volumes:
+  postgres_data:
+  weknora_data:
+  weknora_logs:
+  weknora_uploads:
+  embedding_models:
+  elasticsearch_data:
+
+networks:
+  servify_network:
+    driver: bridge

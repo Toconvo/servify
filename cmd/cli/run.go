@@ -42,11 +42,14 @@ func run(cmd *cobra.Command, args []string) {
 	// 初始化服务
 	wsHub := services.NewWebSocketHub()
 	webrtcService := services.NewWebRTCService(cfg.WebRTC.STUNServer, wsHub)
-	aiService := services.NewAIService(cfg.AI.OpenAIAPIKey, cfg.AI.OpenAIBaseURL)
-	messageRouter := services.NewMessageRouter(aiService, wsHub)
+    aiService := services.NewAIService(cfg.AI.OpenAIAPIKey, cfg.AI.OpenAIBaseURL)
+    messageRouter := services.NewMessageRouter(aiService, wsHub)
 
-	// 初始化知识库
-	aiService.InitializeKnowledgeBase()
+    // 初始化知识库
+    aiService.InitializeKnowledgeBase()
+
+    // 将AI服务注入到WebSocket以便直接处理文本消息
+    wsHub.SetAIService(aiService)
 
 	// 启动服务
 	go wsHub.Run()

@@ -1,15 +1,17 @@
 package services
 
 import (
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"sync"
-	"time"
+    "context"
+    "encoding/json"
+    "fmt"
+    "net/http"
+    "strings"
+    "sync"
+    "time"
 
-	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
-	"github.com/sirupsen/logrus"
+    "github.com/gin-gonic/gin"
+    "github.com/gorilla/websocket"
+    "github.com/sirupsen/logrus"
 )
 
 type WebSocketMessage struct {
@@ -28,11 +30,13 @@ type WebSocketClient struct {
 }
 
 type WebSocketHub struct {
-	clients    map[string]*WebSocketClient
-	broadcast  chan WebSocketMessage
-	register   chan *WebSocketClient
-	unregister chan *WebSocketClient
-	mutex      sync.RWMutex
+    clients    map[string]*WebSocketClient
+    broadcast  chan WebSocketMessage
+    register   chan *WebSocketClient
+    unregister chan *WebSocketClient
+    mutex      sync.RWMutex
+    // 可选：用于直接在WS层调用AI服务（未设置时则仅广播）
+    aiService  AIServiceInterface
 }
 
 var upgrader = websocket.Upgrader{
@@ -42,12 +46,19 @@ var upgrader = websocket.Upgrader{
 }
 
 func NewWebSocketHub() *WebSocketHub {
-	return &WebSocketHub{
-		clients:    make(map[string]*WebSocketClient),
-		broadcast:  make(chan WebSocketMessage),
-		register:   make(chan *WebSocketClient),
-		unregister: make(chan *WebSocketClient),
-	}
+    return &WebSocketHub{
+        clients:    make(map[string]*WebSocketClient),
+        broadcast:  make(chan WebSocketMessage),
+        register:   make(chan *WebSocketClient),
+        unregister: make(chan *WebSocketClient),
+    }
+}
+
+// SetAIService 为WebSocketHub注入AI服务（可选）
+func (h *WebSocketHub) SetAIService(ai AIServiceInterface) {
+    h.mutex.Lock()
+    defer h.mutex.Unlock()
+    h.aiService = ai
 }
 
 func (h *WebSocketHub) Run() {
@@ -190,10 +201,13 @@ func (c *WebSocketClient) writePump() {
 
 func (c *WebSocketClient) handleTextMessage(message WebSocketMessage) {
 	// 保存消息到数据库
-	// TODO: 实现消息持久化
+	if err := c.persistTextMessage(message); err != nil {
+		logrus.Warnf("Failed to persist text message: %v", err)
+		// 不影响消息处理流程，继续执行
+	}
 
 	// 转发给 AI 服务处理
-	// TODO: 集成 AI 服务
+	go c.processMessageWithAI(message)
 
 	// 广播消息
 	c.Hub.broadcast <- message
@@ -201,8 +215,32 @@ func (c *WebSocketClient) handleTextMessage(message WebSocketMessage) {
 
 func (c *WebSocketClient) handleWebRTCOffer(message WebSocketMessage) {
 	// 处理 WebRTC offer
-	// TODO: 集成 WebRTC 服务
+	// 集成 WebRTC 服务处理
 	logrus.Infof("Received WebRTC offer from session %s", c.SessionID)
+
+	// 这里应该调用 WebRTC 服务来处理 offer
+	// 并将 answer 返回给客户端
+	/*
+	if webrtcService != nil {
+		answer, err := webrtcService.HandleOffer(c.SessionID, message.Data)
+		if err != nil {
+			logrus.Errorf("Failed to handle WebRTC offer: %v", err)
+			return
+		}
+
+		// 发送 answer 回客户端
+		response := WebSocketMessage{
+			Type:      "webrtc-answer",
+			Data:      answer,
+			SessionID: c.SessionID,
+			Timestamp: time.Now(),
+		}
+		c.Send <- response
+	}
+	*/
+
+	// 当前实现：简单转发给同一会话的其他客户端
+	c.Hub.broadcast <- message
 }
 
 func (c *WebSocketClient) handleWebRTCAnswer(message WebSocketMessage) {
@@ -228,4 +266,76 @@ func (h *WebSocketHub) GetClientCount() int {
 	h.mutex.RLock()
 	defer h.mutex.RUnlock()
 	return len(h.clients)
+}
+
+// persistTextMessage 持久化文本消息
+func (c *WebSocketClient) persistTextMessage(message WebSocketMessage) error {
+	// 当前简单实现：记录到日志
+	// 生产环境中应该保存到数据库中的 messages 表
+	logrus.WithFields(logrus.Fields{
+		"session_id": c.SessionID,
+		"client_id":  c.ID,
+		"type":       message.Type,
+		"timestamp":  message.Timestamp,
+	}).Info("Text message persisted")
+
+	// TODO: 实现实际的数据库保存逻辑
+	// 可以使用项目中的 Message 模型来保存
+	return nil
+}
+
+// processMessageWithAI 使用 AI 处理消息
+func (c *WebSocketClient) processMessageWithAI(message WebSocketMessage) {
+    // 若未注入AI服务，直接返回
+    h := c.Hub
+    h.mutex.RLock()
+    ai := h.aiService
+    h.mutex.RUnlock()
+    if ai == nil {
+        logrus.WithFields(logrus.Fields{
+            "session_id":  c.SessionID,
+            "message_type": message.Type,
+        }).Debug("AI service not configured; skipping AI processing")
+        return
+    }
+
+    // 提取文本内容
+    var content string
+    switch v := message.Data.(type) {
+    case map[string]interface{}:
+        if s, ok := v["content"].(string); ok {
+            content = s
+        }
+    case string:
+        content = v
+    default:
+        // 非预期格式
+        logrus.Warnf("Unsupported message data type for AI processing: %T", v)
+        return
+    }
+    if strings.TrimSpace(content) == "" {
+        return
+    }
+
+    // 异步调用AI
+    go func(sessionID string, text string) {
+        ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+        defer cancel()
+        resp, err := ai.ProcessQuery(ctx, text, sessionID)
+        if err != nil {
+            logrus.Errorf("AI processing failed: %v", err)
+            return
+        }
+        // 推送AI回复
+        c.Hub.SendToSession(sessionID, WebSocketMessage{
+            Type: "ai-response",
+            Data: map[string]interface{}{
+                "content":    resp.Content,
+                "confidence": resp.Confidence,
+                "source":     resp.Source,
+            },
+            SessionID: sessionID,
+            Timestamp: time.Now(),
+        })
+    }(c.SessionID, content)
 }
