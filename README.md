@@ -39,6 +39,39 @@
 - `docker-compose -f docker-compose.yml -f docker-compose.weknora.yml up -d`
 - 将 `config.weknora.yml` 挂载为容器内默认配置，并通过 `DB_*`/`SERVIFY_*` 覆盖运行参数
 
+### 验收清单（Smoke Test）
+
+1) 启动（本地或 Compose）
+- 本地：`make run-cli CONFIG=./config.weknora.yml` 或 `go run cmd/server/main.go --host=0.0.0.0 --port=8080`
+- Compose：`make docker-up-weknora`
+
+2) 健康检查
+```bash
+curl -s http://localhost:8080/health | jq
+```
+期望：`status` 为 `healthy` 或 `degraded`
+
+3) AI 查询（增强）
+```bash
+curl -s -X POST http://localhost:8080/api/v1/ai/query \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"你好，介绍一下 Servify","session_id":"test_session_123"}' | jq
+```
+期望：`success: true` 并返回回答内容
+
+4) WebSocket/RTC 状态
+```bash
+curl -s http://localhost:8080/api/v1/ws/stats | jq
+curl -s http://localhost:8080/api/v1/webrtc/connections | jq
+```
+期望：`success: true`
+
+5) 一键集成测试（WeKnora）
+```bash
+./scripts/test-weknora-integration.sh
+```
+期望：各步骤输出 ✅
+
 > 注意：消息现已落库（Message），若未配置数据库则回退日志；WeKnora 不可用时会降级到标准 AI。
 
 ## 系统概述

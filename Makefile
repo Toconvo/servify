@@ -1,6 +1,6 @@
 # Servify Makefile
 
-.PHONY: help build build-cli build-weknora run run-cli run-weknora migrate migrate-seed test clean docker-build docker-run
+.PHONY: help build build-cli build-weknora run run-cli run-weknora migrate migrate-seed test clean docker-build docker-run docker-up-weknora docker-down docker-logs-weknora
 
 # Default target
 help:
@@ -17,6 +17,9 @@ help:
 	@echo "  clean         - Clean build artifacts"
 	@echo "  docker-build  - Build Docker image"
 	@echo "  docker-run    - Run with Docker Compose"
+	@echo "  docker-up-weknora - Up WeKnora compose (server+weknora+db)"
+	@echo "  docker-down      - Down compose services"
+	@echo "  docker-logs-weknora - Tail servify logs"
 	@echo "  docker-stop   - Stop Docker Compose services"
 
 # Build the application
@@ -80,6 +83,18 @@ docker-build:
 docker-run:
 	@echo "Starting services with Docker Compose..."
 	docker-compose up -d
+
+docker-up-weknora:
+	@echo "Starting WeKnora stack..."
+	docker-compose -f docker-compose.yml -f docker-compose.weknora.yml up -d
+
+docker-down:
+	@echo "Stopping services..."
+	docker-compose down
+
+docker-logs-weknora:
+	@echo "Tailing servify logs..."
+	docker-compose -f docker-compose.yml -f docker-compose.weknora.yml logs -f servify
 
 # Stop Docker Compose services
 docker-stop:

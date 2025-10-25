@@ -123,6 +123,15 @@ func main() {
         aiService = baseAI
     }
 
+    // 初始化实时与路由服务（对齐 CLI 端点）
+    wsHub := services.NewWebSocketHub()
+    webrtcService := services.NewWebRTCService(cfg.WebRTC.STUNServer, wsHub)
+    messageRouter := services.NewMessageRouter(aiService, wsHub, db)
+    go wsHub.Run()
+    if err := messageRouter.Start(); err != nil {
+        appLogger.Fatalf("Failed to start message router: %v", err)
+    }
+
     // 初始化业务服务
     customerService := services.NewCustomerService(db, appLogger)
     agentService := services.NewAgentService(db, appLogger)
@@ -144,18 +153,54 @@ func main() {
     r.Use(gin.Recovery())
     r.Use(corsMiddleware())
 
-    // 健康检查
-    r.GET("/health", func(c *gin.Context) {
-        c.JSON(http.StatusOK, gin.H{ "status": "ok", "timestamp": time.Now().UTC(), "version": "v1.1.0" })
-    })
+    // 健康检查（增强版）
+    healthHandler := handlers.NewEnhancedHealthHandler(cfg, aiService)
+    r.GET("/health", healthHandler.Health)
+    r.GET("/ready", healthHandler.Ready)
 
-    // API 路由组
+    // API 路由组（管理类）
     api := r.Group("/api")
     handlers.RegisterCustomerRoutes(api, customerHandler(customerService, appLogger))
     handlers.RegisterAgentRoutes(api, agentHandler(agentService, appLogger))
     handlers.RegisterTicketRoutes(api, ticketHandler(ticketService, appLogger))
     handlers.RegisterSessionTransferRoutes(api, transferHandler(sessionTransferService, appLogger))
     handlers.RegisterStatisticsRoutes(api, statisticsHandler(statisticsService, appLogger))
+
+    // v1 路由组（实时/AI 与静态服务）
+    v1 := r.Group("/api/v1")
+    {
+        // WebSocket
+        wsHandler := handlers.NewWebSocketHandler(wsHub)
+        v1.GET("/ws", wsHandler.HandleWebSocket)
+        v1.GET("/ws/stats", wsHandler.GetStats)
+
+        // WebRTC
+        webrtcHandler := handlers.NewWebRTCHandler(webrtcService)
+        v1.GET("/webrtc/stats", webrtcHandler.GetStats)
+        v1.GET("/webrtc/connections", webrtcHandler.GetConnections)
+
+        // 路由统计
+        messageHandler := handlers.NewMessageHandler(messageRouter)
+        v1.GET("/messages/platforms", messageHandler.GetPlatformStats)
+
+        // AI API
+        aiHandler := handlers.NewAIHandler(aiService)
+        aiAPI := v1.Group("/ai")
+        aiAPI.POST("/query", aiHandler.ProcessQuery)
+        aiAPI.GET("/status", aiHandler.GetStatus)
+        aiAPI.GET("/metrics", aiHandler.GetMetrics)
+        if cfg.WeKnora.Enabled {
+            aiAPI.POST("/knowledge/upload", aiHandler.UploadDocument)
+            aiAPI.POST("/knowledge/sync", aiHandler.SyncKnowledgeBase)
+            aiAPI.PUT("/weknora/enable", aiHandler.EnableWeKnora)
+            aiAPI.PUT("/weknora/disable", aiHandler.DisableWeKnora)
+            aiAPI.POST("/circuit-breaker/reset", aiHandler.ResetCircuitBreaker)
+        }
+    }
+
+    // 静态资源（与 CLI 对齐）
+    r.Static("/static", "./static")
+    r.Static("/", "./web")
 
     // 启动服务器
     // 监听地址优先使用 flags/env 覆盖
