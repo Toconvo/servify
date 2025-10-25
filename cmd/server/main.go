@@ -7,6 +7,7 @@ import (
     "net/http"
     "os"
     "os/signal"
+    "strconv"
     "syscall"
     "time"
 
@@ -44,6 +45,8 @@ func main() {
         dbName    string
         dbSSLMode string
         dbTZ      string
+        srvHost   string
+        srvPort   int
     )
     // 延迟导入以避免顶层 import 冲突
     {
@@ -62,6 +65,8 @@ func main() {
     flagSet.StringVar(&dbName, "db-name", getenvDefault("DB_NAME", cfg.Database.Name), "database name")
     flagSet.StringVar(&dbSSLMode, "db-sslmode", getenvDefault("DB_SSLMODE", "disable"), "sslmode (disable, require, verify-ca, verify-full)")
     flagSet.StringVar(&dbTZ, "db-timezone", getenvDefault("DB_TIMEZONE", "UTC"), "database timezone")
+    flagSet.StringVar(&srvHost, "host", getenvDefault("SERVIFY_HOST", cfg.Server.Host), "server host (listen)")
+    flagSet.IntVar(&srvPort, "port", func() int { if p := os.Getenv("SERVIFY_PORT"); p != "" { if n, err := strconv.Atoi(p); err == nil { return n } }; return cfg.Server.Port }(), "server port (listen)")
     _ = flagSet.Parse(os.Args[1:])
 
     // 组装 DSN
@@ -153,9 +158,15 @@ func main() {
     handlers.RegisterStatisticsRoutes(api, statisticsHandler(statisticsService, appLogger))
 
     // 启动服务器
-    srv := &http.Server{ Addr: fmt.Sprintf(":%d", cfg.Server.Port), Handler: r }
+    // 监听地址优先使用 flags/env 覆盖
+    host := firstNonEmpty(srvHost, cfg.Server.Host)
+    port := srvPort
+    if port == 0 { port = cfg.Server.Port }
+    listenAddr := fmt.Sprintf("%s:%d", host, port)
+
+    srv := &http.Server{ Addr: listenAddr, Handler: r }
     go func() {
-        appLogger.Infof("Starting server on port %d", cfg.Server.Port)
+        appLogger.Infof("Starting server on %s", listenAddr)
         if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
             appLogger.Fatalf("Failed to start server: %v", err)
         }
