@@ -337,63 +337,78 @@ func startHealthMonitoring(cfg *config.Config, weKnoraClient weknora.WeKnoraInte
 
 // rateLimitMiddleware 速率限制中间件
 func rateLimitMiddleware(cfg *config.Config) gin.HandlerFunc {
-	// 简单的内存级速率限制实现
-	// 生产环境建议使用 Redis 或专门的速率限制库
+    // 令牌桶实现：
+    // - 速率：RequestsPerMinute / 60 tokens/sec
+    // - 桶容量：Burst（若 Burst 未配置则退化为 RequestsPerMinute）
 
-	type client struct {
-		requests []time.Time
-		mutex    sync.Mutex
-	}
+    type bucket struct {
+        tokens    float64
+        lastRefill time.Time
+        mutex     sync.Mutex
+    }
 
-	clients := make(map[string]*client)
-	var globalMutex sync.RWMutex
+    ratePerSec := float64(cfg.Security.RateLimiting.RequestsPerMinute) / 60.0
+    capacity := cfg.Security.RateLimiting.Burst
+    if capacity <= 0 {
+        capacity = cfg.Security.RateLimiting.RequestsPerMinute
+        if capacity <= 0 {
+            capacity = 60
+        }
+    }
 
-	return func(c *gin.Context) {
-		// 获取客户端IP
-		clientIP := c.ClientIP()
+    buckets := make(map[string]*bucket)
+    var bucketsMu sync.RWMutex
 
-		globalMutex.RLock()
-		clientData, exists := clients[clientIP]
-		globalMutex.RUnlock()
+    return func(c *gin.Context) {
+        clientIP := c.ClientIP()
 
-		if !exists {
-			globalMutex.Lock()
-			clients[clientIP] = &client{
-				requests: make([]time.Time, 0),
-			}
-			clientData = clients[clientIP]
-			globalMutex.Unlock()
-		}
+        bucketsMu.RLock()
+        b, ok := buckets[clientIP]
+        bucketsMu.RUnlock()
+        if !ok {
+            bucketsMu.Lock()
+            if b, ok = buckets[clientIP]; !ok {
+                b = &bucket{tokens: float64(capacity), lastRefill: time.Now()}
+                buckets[clientIP] = b
+            }
+            bucketsMu.Unlock()
+        }
 
-		clientData.mutex.Lock()
-		defer clientData.mutex.Unlock()
+        b.mutex.Lock()
+        now := time.Now()
+        elapsed := now.Sub(b.lastRefill).Seconds()
+        // refill
+        b.tokens += elapsed * ratePerSec
+        if b.tokens > float64(capacity) {
+            b.tokens = float64(capacity)
+        }
+        b.lastRefill = now
 
-		now := time.Now()
-		windowStart := now.Add(-time.Duration(cfg.Security.RateLimiting.WindowSize) * time.Second)
+        if b.tokens >= 1.0 {
+            b.tokens -= 1.0
+            b.mutex.Unlock()
+            c.Next()
+            return
+        }
 
-		// 清理过期的请求记录
-		validRequests := make([]time.Time, 0)
-		for _, reqTime := range clientData.requests {
-			if reqTime.After(windowStart) {
-				validRequests = append(validRequests, reqTime)
-			}
-		}
-		clientData.requests = validRequests
+        // 计算重试时间
+        need := 1.0 - b.tokens
+        retryAfter := 1
+        if ratePerSec > 0 {
+            secs := int(need/ratePerSec + 0.9999) // ceil
+            if secs > 0 {
+                retryAfter = secs
+            }
+        }
+        b.mutex.Unlock()
 
-		// 检查是否超过限制
-		if len(clientData.requests) >= cfg.Security.RateLimiting.RequestsPerSecond {
-			c.JSON(http.StatusTooManyRequests, gin.H{
-				"error":   "Rate limit exceeded",
-				"message": fmt.Sprintf("Too many requests. Limit: %d requests per %d seconds", cfg.Security.RateLimiting.RequestsPerSecond, cfg.Security.RateLimiting.WindowSize),
-				"retry_after": cfg.Security.RateLimiting.WindowSize,
-			})
-			c.Abort()
-			return
-		}
-
-		// 记录当前请求
-		clientData.requests = append(clientData.requests, now)
-
-		c.Next()
-	}
+        c.Header("Retry-After", fmt.Sprintf("%d", retryAfter))
+        c.JSON(http.StatusTooManyRequests, gin.H{
+            "error":   "Rate limit exceeded",
+            "message": fmt.Sprintf("Too many requests. Limit: %d req/min (burst %d)", cfg.Security.RateLimiting.RequestsPerMinute, capacity),
+            "retry_after": retryAfter,
+        })
+        c.Abort()
+        return
+    }
 }

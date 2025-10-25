@@ -9,10 +9,10 @@ import (
 )
 
 type MessageRouter struct {
-	platforms map[string]PlatformAdapter
-	aiService *AIService
-	wsHub     *WebSocketHub
-	mutex     sync.RWMutex
+    platforms map[string]PlatformAdapter
+    aiService AIServiceInterface
+    wsHub     *WebSocketHub
+    mutex     sync.RWMutex
 }
 
 type PlatformAdapter interface {
@@ -68,12 +68,12 @@ type RouteRule struct {
 	Priority  int          `json:"priority"`
 }
 
-func NewMessageRouter(aiService *AIService, wsHub *WebSocketHub) *MessageRouter {
-	return &MessageRouter{
-		platforms: make(map[string]PlatformAdapter),
-		aiService: aiService,
-		wsHub:     wsHub,
-	}
+func NewMessageRouter(aiService AIServiceInterface, wsHub *WebSocketHub) *MessageRouter {
+    return &MessageRouter{
+        platforms: make(map[string]PlatformAdapter),
+        aiService: aiService,
+        wsHub:     wsHub,
+    }
 }
 
 func (r *MessageRouter) RegisterPlatform(platformID string, adapter PlatformAdapter) {

@@ -2,6 +2,7 @@ package main
 
 import (
     "context"
+    "flag"
     "fmt"
     "net/http"
     "os"
@@ -32,16 +33,57 @@ func main() {
     _ = viper.ReadInConfig()
 
     cfg := config.Load()
+
+    // 允许通过 flags/env 覆盖数据库连接（保持与 migrate 一致的接口）
+    var (
+        flagDSN   string
+        dbHost    string
+        dbPortStr string
+        dbUser    string
+        dbPass    string
+        dbName    string
+        dbSSLMode string
+        dbTZ      string
+    )
+    // 延迟导入以避免顶层 import 冲突
+    {
+        // 标准库 flag 在此作用域使用
+        type strptr = *string
+        _ = strptr(nil)
+    }
+    // 使用标准库 flag
+    flagSet := flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+    flagSet.SetOutput(os.Stdout)
+    flagSet.StringVar(&flagDSN, "dsn", os.Getenv("DB_DSN"), "Postgres DSN, if set overrides other DB flags")
+    flagSet.StringVar(&dbHost, "db-host", getenvDefault("DB_HOST", cfg.Database.Host), "database host")
+    flagSet.StringVar(&dbPortStr, "db-port", getenvDefault("DB_PORT", fmt.Sprintf("%d", cfg.Database.Port)), "database port")
+    flagSet.StringVar(&dbUser, "db-user", getenvDefault("DB_USER", cfg.Database.User), "database user")
+    flagSet.StringVar(&dbPass, "db-pass", getenvDefault("DB_PASSWORD", cfg.Database.Password), "database password")
+    flagSet.StringVar(&dbName, "db-name", getenvDefault("DB_NAME", cfg.Database.Name), "database name")
+    flagSet.StringVar(&dbSSLMode, "db-sslmode", getenvDefault("DB_SSLMODE", "disable"), "sslmode (disable, require, verify-ca, verify-full)")
+    flagSet.StringVar(&dbTZ, "db-timezone", getenvDefault("DB_TIMEZONE", "UTC"), "database timezone")
+    _ = flagSet.Parse(os.Args[1:])
+
+    // 组装 DSN
+    dsn := flagDSN
+    if dsn == "" {
+        host := firstNonEmpty(dbHost, cfg.Database.Host)
+        user := firstNonEmpty(dbUser, cfg.Database.User)
+        pass := firstNonEmpty(dbPass, cfg.Database.Password)
+        name := firstNonEmpty(dbName, cfg.Database.Name)
+        port := dbPortStr
+        if port == "" && cfg.Database.Port != 0 {
+            port = fmt.Sprintf("%d", cfg.Database.Port)
+        }
+        ssl := dbSSLMode
+        tz := dbTZ
+        dsn = fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=%s TimeZone=%s", host, user, pass, name, port, ssl, tz)
+    }
     if err := config.InitLogger(cfg); err != nil {
         logrus.Warnf("init logger: %v", err)
     }
     appLogger := logrus.StandardLogger()
 
-    // 构建 Postgres DSN 并连接数据库
-    dsn := fmt.Sprintf(
-        "host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=UTC",
-        cfg.Database.Host, cfg.Database.User, cfg.Database.Password, cfg.Database.Name, cfg.Database.Port,
-    )
     db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{ Logger: logger.Default.LogMode(logger.Info) })
     if err != nil {
         appLogger.Fatalf("Failed to connect to database: %v", err)
@@ -138,6 +180,16 @@ func agentHandler(s *services.AgentService, l *logrus.Logger) *handlers.AgentHan
 func ticketHandler(s *services.TicketService, l *logrus.Logger) *handlers.TicketHandler { return handlers.NewTicketHandler(s, l) }
 func transferHandler(s *services.SessionTransferService, l *logrus.Logger) *handlers.SessionTransferHandler { return handlers.NewSessionTransferHandler(s, l) }
 func statisticsHandler(s *services.StatisticsService, l *logrus.Logger) *handlers.StatisticsHandler { return handlers.NewStatisticsHandler(s, l) }
+
+// helpers (copied from migrate for consistency)
+func getenvDefault(key, def string) string {
+    if v := os.Getenv(key); v != "" { return v }
+    return def
+}
+func firstNonEmpty(vals ...string) string {
+    for _, v := range vals { if v != "" { return v } }
+    return ""
+}
 
 // corsMiddleware CORS 中间件
 func corsMiddleware() gin.HandlerFunc {
