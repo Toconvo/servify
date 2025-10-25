@@ -29,3 +29,6 @@ Thumbs.db
 coverage.out
 # 备份文件
 *.bak
+
+# 测试输出
+scripts/test-results/
