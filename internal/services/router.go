@@ -1,17 +1,20 @@
 package services
 
 import (
-	"context"
-	"fmt"
-	"github.com/sirupsen/logrus"
-	"sync"
-	"time"
+    "context"
+    "fmt"
+    "github.com/sirupsen/logrus"
+    "servify/internal/models"
+    "gorm.io/gorm"
+    "sync"
+    "time"
 )
 
 type MessageRouter struct {
     platforms map[string]PlatformAdapter
     aiService AIServiceInterface
     wsHub     *WebSocketHub
+    db        *gorm.DB
     mutex     sync.RWMutex
 }
 
@@ -68,11 +71,12 @@ type RouteRule struct {
 	Priority  int          `json:"priority"`
 }
 
-func NewMessageRouter(aiService AIServiceInterface, wsHub *WebSocketHub) *MessageRouter {
+func NewMessageRouter(aiService AIServiceInterface, wsHub *WebSocketHub, db *gorm.DB) *MessageRouter {
     return &MessageRouter{
         platforms: make(map[string]PlatformAdapter),
         aiService: aiService,
         wsHub:     wsHub,
+        db:        db,
     }
 }
 
@@ -236,19 +240,33 @@ func (r *MessageRouter) GetPlatformStats() map[string]interface{} {
 
 // persistMessage 消息持久化
 func (r *MessageRouter) persistMessage(message UnifiedMessage) error {
-	// 当前简单实现：记录到日志
-	// 生产环境中应该保存到数据库
-	logrus.WithFields(logrus.Fields{
-		"message_id":  message.ID,
-		"platform_id": message.PlatformID,
-		"user_id":     message.UserID,
-		"type":        message.Type,
-		"timestamp":   message.Timestamp,
-	}).Info("Message persisted")
+    // 如果未配置数据库，回退为日志
+    if r.db == nil {
+        logrus.WithFields(logrus.Fields{
+            "message_id":  message.ID,
+            "platform_id": message.PlatformID,
+            "user_id":     message.UserID,
+            "type":        message.Type,
+            "timestamp":   message.Timestamp,
+        }).Info("Message persisted (log-only)")
+        return nil
+    }
 
-	// TODO: 实现实际的数据库保存逻辑
-	// 可以使用项目中的 Message 模型来保存
-	return nil
+    // 映射到持久化模型
+    m := &models.Message{
+        SessionID: message.UserID, // 简化：使用 UserID 作为 SessionID（实际应建立/查找会话）
+        UserID:    0,              // 未绑定用户ID时留空
+        Content:   message.Content,
+        Type:      string(message.Type),
+        Sender:    "user",
+        CreatedAt: time.Now(),
+    }
+
+    if err := r.db.Create(m).Error; err != nil {
+        return fmt.Errorf("persist message: %w", err)
+    }
+    logrus.WithField("id", m.ID).Debug("Message stored")
+    return nil
 }
 
 // Telegram 适配器示例

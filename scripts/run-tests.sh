@@ -41,9 +41,9 @@ echo "  - coverage.out: Raw coverage data"
 echo "  - coverage.html: Coverage report (open in browser)"
 echo "  - benchmark.txt: Benchmark results"
 
-# 检查覆盖率是否达到目标（20%）
+# 覆盖率阈值（默认 20%，可通过 TEST_COVERAGE_TARGET 环境变量覆盖）
 COVERAGE=$(go tool cover -func="$OUT_DIR/coverage.out" | tail -1 | awk '{print $3}' | sed 's/%//')
-TARGET=20.0
+TARGET=${TEST_COVERAGE_TARGET:-20.0}
 
 echo ""
 echo "🎯 Coverage Target: ${TARGET}%"

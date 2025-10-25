@@ -5,21 +5,24 @@
 package cli
 
 import (
-	"context"
-	"fmt"
-	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
+    "context"
+    "fmt"
+    "net/http"
+    "os"
+    "os/signal"
+    "syscall"
+    "time"
 
-	"servify/internal/config"
-	"servify/internal/handlers"
-	"servify/internal/services"
+    "servify/internal/config"
+    "servify/internal/handlers"
+    "servify/internal/services"
+    "gorm.io/gorm"
+    "gorm.io/gorm/logger"
+    "gorm.io/driver/postgres"
 
-	"github.com/gin-gonic/gin"
-	"github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
+    "github.com/gin-gonic/gin"
+    "github.com/sirupsen/logrus"
+    "github.com/spf13/cobra"
 )
 
 var runCmd = &cobra.Command{
@@ -34,20 +37,27 @@ func init() {
 }
 
 func run(cmd *cobra.Command, args []string) {
-	// 加载配置
-	cfg := config.Load()
+    // 加载配置
+    cfg := config.Load()
 
 	// 初始化日志系统
 	if err := config.InitLogger(cfg); err != nil {
 		logrus.Fatalf("Failed to initialize logger: %v", err)
 	}
 
-	// 初始化服务
-	wsHub := services.NewWebSocketHub()
-	webrtcService := services.NewWebRTCService(cfg.WebRTC.STUNServer, wsHub)
+    // 初始化数据库
+    dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=UTC", cfg.Database.Host, cfg.Database.User, cfg.Database.Password, cfg.Database.Name, cfg.Database.Port)
+    db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{ Logger: logger.Default.LogMode(logger.Warn) })
+    if err != nil {
+        logrus.Warnf("DB connect failed, message persistence disabled: %v", err)
+    }
+
+    // 初始化服务
+    wsHub := services.NewWebSocketHub()
+    webrtcService := services.NewWebRTCService(cfg.WebRTC.STUNServer, wsHub)
     // 使用新的配置结构（cfg.AI.OpenAI.*）
     aiService := services.NewAIService(cfg.AI.OpenAI.APIKey, cfg.AI.OpenAI.BaseURL)
-    messageRouter := services.NewMessageRouter(aiService, wsHub)
+    messageRouter := services.NewMessageRouter(aiService, wsHub, db)
 
     // 初始化知识库
     aiService.InitializeKnowledgeBase()
@@ -68,8 +78,8 @@ func run(cmd *cobra.Command, args []string) {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	// 创建路由
-	router := setupRouter(wsHub, webrtcService, messageRouter)
+    // 创建路由
+    router := setupRouter(wsHub, webrtcService, messageRouter)
 
 	// 创建服务器
 	server := &http.Server{

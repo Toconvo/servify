@@ -4,23 +4,26 @@
 package cli
 
 import (
-	"context"
-	"fmt"
-	"net/http"
-	"os"
-	"os/signal"
-	"sync"
-	"syscall"
-	"time"
+    "context"
+    "fmt"
+    "net/http"
+    "os"
+    "os/signal"
+    "sync"
+    "syscall"
+    "time"
 
-	"servify/internal/config"
-	"servify/internal/handlers"
-	"servify/internal/services"
-	"servify/pkg/weknora"
+    "servify/internal/config"
+    "servify/internal/handlers"
+    "servify/internal/services"
+    "servify/pkg/weknora"
+    "gorm.io/gorm"
+    "gorm.io/gorm/logger"
+    "gorm.io/driver/postgres"
 
-	"github.com/gin-gonic/gin"
-	"github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
+    "github.com/gin-gonic/gin"
+    "github.com/sirupsen/logrus"
+    "github.com/spf13/cobra"
 )
 
 var runCmd = &cobra.Command{
@@ -35,8 +38,8 @@ func init() {
 }
 
 func run(cmd *cobra.Command, args []string) {
-	// 加载配置
-	cfg := config.Load()
+    // 加载配置
+    cfg := config.Load()
 
 	// 初始化日志系统
 	if err := config.InitLogger(cfg); err != nil {
@@ -45,9 +48,16 @@ func run(cmd *cobra.Command, args []string) {
 
 	logrus.Info("🚀 Starting Servify with WeKnora integration...")
 
-	// 初始化基础服务
-	wsHub := services.NewWebSocketHub()
-	webrtcService := services.NewWebRTCService(cfg.WebRTC.STUNServer, wsHub)
+    // 初始化数据库
+    dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=UTC", cfg.Database.Host, cfg.Database.User, cfg.Database.Password, cfg.Database.Name, cfg.Database.Port)
+    db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{ Logger: logger.Default.LogMode(logger.Warn) })
+    if err != nil {
+        logrus.Warnf("DB connect failed, message persistence disabled: %v", err)
+    }
+
+    // 初始化基础服务
+    wsHub := services.NewWebSocketHub()
+    webrtcService := services.NewWebRTCService(cfg.WebRTC.STUNServer, wsHub)
 
 	// 初始化 WeKnora 客户端
 	var weKnoraClient weknora.WeKnoraInterface
@@ -114,8 +124,8 @@ func run(cmd *cobra.Command, args []string) {
 		logrus.Info("✅ Standard AI service initialized")
 	}
 
-	// 初始化消息路由
-	messageRouter := services.NewMessageRouter(aiService, wsHub)
+    // 初始化消息路由
+    messageRouter := services.NewMessageRouter(aiService, wsHub, db)
 
 	// 启动后台服务
 	logrus.Info("🔌 Starting background services...")
