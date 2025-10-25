@@ -1,3 +1,6 @@
+//go:build weknora
+// +build weknora
+
 package cli
 
 import (

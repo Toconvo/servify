@@ -42,7 +42,8 @@ func run(cmd *cobra.Command, args []string) {
 	// 初始化服务
 	wsHub := services.NewWebSocketHub()
 	webrtcService := services.NewWebRTCService(cfg.WebRTC.STUNServer, wsHub)
-    aiService := services.NewAIService(cfg.AI.OpenAIAPIKey, cfg.AI.OpenAIBaseURL)
+    // 使用新的配置结构（cfg.AI.OpenAI.*）
+    aiService := services.NewAIService(cfg.AI.OpenAI.APIKey, cfg.AI.OpenAI.BaseURL)
     messageRouter := services.NewMessageRouter(aiService, wsHub)
 
     // 初始化知识库

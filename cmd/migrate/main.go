@@ -1,32 +1,36 @@
 package main
 
 import (
-	"log"
-	"os"
-	"time"
+    "fmt"
+    "log"
+    "os"
+    "time"
 
-	"servify/internal/config"
-	"servify/internal/models"
+    "servify/internal/config"
+    "servify/internal/models"
 
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+    "gorm.io/driver/postgres"
+    "gorm.io/gorm"
+    "gorm.io/gorm/logger"
 )
 
 func main() {
-	// 加载配置
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
-	}
+    // 加载配置（已在 CLI 层通过 viper 读取，Load 仅反序列化）
+    cfg := config.Load()
 
-	// 连接数据库
-	db, err := gorm.Open(postgres.Open(cfg.Database.URL), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
-	})
-	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
-	}
+    // 构建 Postgres DSN
+    dsn := fmt.Sprintf(
+        "host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=UTC",
+        cfg.Database.Host, cfg.Database.User, cfg.Database.Password, cfg.Database.Name, cfg.Database.Port,
+    )
+
+    // 连接数据库
+    db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+        Logger: logger.Default.LogMode(logger.Info),
+    })
+    if err != nil {
+        log.Fatalf("Failed to connect to database: %v", err)
+    }
 
 	log.Println("Starting database migration...")
 
@@ -78,14 +82,14 @@ func main() {
 	// 为统计表创建索引
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_daily_stats_date ON daily_stats(date)")
 
-	log.Println("Additional indexes created successfully!")
+    log.Println("Additional indexes created successfully!")
 
-	// 插入默认数据
-	if len(os.Args) > 1 && os.Args[1] == "--seed" {
-		log.Println("Seeding default data...")
-		seedDefaultData(db)
-		log.Println("Default data seeded successfully!")
-	}
+    // 插入默认数据
+    if len(os.Args) > 1 && os.Args[1] == "--seed" {
+        log.Println("Seeding default data...")
+        seedDefaultData(db)
+        log.Println("Default data seeded successfully!")
+    }
 
 	log.Println("Migration process completed!")
 }
