@@ -44,3 +44,36 @@ jobs:
           TEST_COVERAGE_TARGET: "0"
         run: make test
 
+  integration:
+    name: Integration (Compose + E2E)
+    runs-on: self-hosted
+    needs: build-test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Compose Up (WeKnora stack)
+        run: |
+          docker-compose -f docker-compose.yml -f docker-compose.weknora.yml up -d
+
+      - name: Wait For Health
+        run: |
+          for i in {1..60}; do curl -fsS http://localhost:8080/health && break || sleep 2; done
+
+      - name: Run Integration Script
+        env:
+          SERVIFY_URL: http://localhost:8080
+          WEKNORA_URL: http://localhost:9000
+        run: |
+          chmod +x scripts/test-weknora-integration.sh
+          ./scripts/test-weknora-integration.sh
+
+      - name: Compose Down
+        if: always()
+        run: |
+          docker-compose -f docker-compose.yml -f docker-compose.weknora.yml down -v

@@ -72,6 +72,10 @@ curl -s http://localhost:8080/api/v1/webrtc/connections | jq
 ```
 期望：各步骤输出 ✅
 
+6) WebSocket Web Demo（浏览器）
+- 打开: http://localhost:8080/ws-demo.html
+- 点击连接，输入消息，查看日志回显与 AI 回复
+
 > 注意：消息现已落库（Message），若未配置数据库则回退日志；WeKnora 不可用时会降级到标准 AI。
 
 ## 系统概述
