@@ -83,14 +83,26 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      # 现有配置
-      - SERVER_HOST=0.0.0.0
-      - SERVER_PORT=8080
+      # 服务监听（与 server flags/env 对齐）
+      - SERVIFY_HOST=0.0.0.0
+      - SERVIFY_PORT=8080
+
+      # 数据库（server/migrate 支持 DB_* 覆盖）
       - DB_HOST=postgres
-      - REDIS_HOST=redis
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=password
+      - DB_NAME=servify
+
+      # 可选：直接提供 DSN（设置后优先生效）
+      # - DB_DSN=host=postgres user=postgres password=password dbname=servify port=5432 sslmode=disable TimeZone=UTC
+
+      # OpenAI（可选）
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
 
       # WeKnora 集成配置
+      # WeKnora 配置（通过挂载 config.weknora.yml 更稳妥；此处仅示例环境变量）
       - WEKNORA_ENABLED=true
       - WEKNORA_BASE_URL=http://weknora:9000
       - WEKNORA_API_KEY=${WEKNORA_API_KEY:-default-api-key}
@@ -106,6 +118,9 @@ services:
       - redis
       - weknora
 
+    volumes:
+      # 将 weknora 版配置作为默认配置文件注入（可选）
+      - ./config.weknora.yml:/root/config.yml:ro
     networks:
       - servify_network
 

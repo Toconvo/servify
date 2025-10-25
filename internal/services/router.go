@@ -8,6 +8,7 @@ import (
     "gorm.io/gorm"
     "sync"
     "time"
+    "github.com/google/uuid"
 )
 
 type MessageRouter struct {
@@ -252,10 +253,19 @@ func (r *MessageRouter) persistMessage(message UnifiedMessage) error {
         return nil
     }
 
+    // 确保会话存在（以 message.UserID 作为会话标识；为空则创建新会话）
+    sid := message.UserID
+    if sid == "" {
+        sid = uuid.NewString()
+    }
+    if err := r.ensureSession(sid, message.PlatformID); err != nil {
+        logrus.Warnf("ensure session failed: %v", err)
+    }
+
     // 映射到持久化模型
     m := &models.Message{
-        SessionID: message.UserID, // 简化：使用 UserID 作为 SessionID（实际应建立/查找会话）
-        UserID:    0,              // 未绑定用户ID时留空
+        SessionID: sid,
+        UserID:    0, // 未绑定用户ID时留空
         Content:   message.Content,
         Type:      string(message.Type),
         Sender:    "user",
@@ -266,6 +276,32 @@ func (r *MessageRouter) persistMessage(message UnifiedMessage) error {
         return fmt.Errorf("persist message: %w", err)
     }
     logrus.WithField("id", m.ID).Debug("Message stored")
+    return nil
+}
+
+// ensureSession 确保会话记录存在
+func (r *MessageRouter) ensureSession(sessionID string, platform string) error {
+    if r.db == nil || sessionID == "" {
+        return nil
+    }
+    var s models.Session
+    if err := r.db.First(&s, "id = ?", sessionID).Error; err != nil {
+        if err == gorm.ErrRecordNotFound {
+            s = models.Session{
+                ID:        sessionID,
+                Status:    "active",
+                Platform:  platform,
+                StartedAt: time.Now(),
+                CreatedAt: time.Now(),
+                UpdatedAt: time.Now(),
+            }
+            if err := r.db.Create(&s).Error; err != nil {
+                return fmt.Errorf("create session: %w", err)
+            }
+            return nil
+        }
+        return err
+    }
     return nil
 }
 

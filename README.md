@@ -2,6 +2,45 @@
 
 一个基于 WebRTC 的智能客服系统，支持文字交流、AI 智能问答和远程协助功能。
 
+## 快速开始（MVP）
+
+- 构建与迁移
+  - `make build`
+  - `make migrate DB_HOST=localhost DB_PORT=5432 DB_USER=postgres DB_PASSWORD=password DB_NAME=servify`
+- 运行（标准 CLI）
+  - `make run-cli CONFIG=./config.yml`
+- 运行（WeKnora 增强 CLI）
+  - `make run-weknora CONFIG=./config.weknora.yml`
+- 健康检查与端点
+  - 健康: `GET /health`
+  - WebSocket: `GET /api/v1/ws`（query: `session_id`）
+  - AI（增强）: `POST /api/v1/ai/query`
+
+### 生产入口说明
+
+- 推荐以 CLI 为入口：功能完整（WS/AI/静态资源/增强路由等），并提供 `-tags weknora` 增强版
+- server 入口：保留管理类 API（客户、客服、工单、统计），可通过 `--host/--port`、`DB_*`/`--dsn` 覆盖运行参数
+
+### 配置与覆盖
+
+- 配置文件：`config.yml` 或 `config.weknora.yml`
+- 环境变量/flags 覆盖（server/migrate）：
+  - 监听地址：`SERVIFY_HOST`/`--host`，`SERVIFY_PORT`/`--port`
+  - 数据库：`DB_*` 或 `--dsn`
+  - 测试覆盖率阈值：`TEST_COVERAGE_TARGET`（脚本 `scripts/run-tests.sh`）
+
+### CI（自建 Runner）
+
+- 工作流：`.github/workflows/ci.yml`（runs-on: `self-hosted`）
+- Runner 搭建：`docs/CI_SELF_HOSTED.md`
+
+### Docker Compose（WeKnora）
+
+- `docker-compose -f docker-compose.yml -f docker-compose.weknora.yml up -d`
+- 将 `config.weknora.yml` 挂载为容器内默认配置，并通过 `DB_*`/`SERVIFY_*` 覆盖运行参数
+
+> 注意：消息现已落库（Message），若未配置数据库则回退日志；WeKnora 不可用时会降级到标准 AI。
+
 ## 系统概述
 
 ### 核心功能 (v1.0)
