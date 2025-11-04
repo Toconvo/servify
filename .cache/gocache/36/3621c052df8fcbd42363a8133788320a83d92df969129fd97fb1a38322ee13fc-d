@@ -1,0 +1,406 @@
+//line /Users/cui/Workspaces/servify/internal/services/websocket.go:1:1
+package services
+
+import (
+    "context"
+    "encoding/json"
+    "fmt"
+    "net/http"
+    "strings"
+    "sync"
+    "time"
+
+    "github.com/gin-gonic/gin"
+    "github.com/gorilla/websocket"
+    "github.com/sirupsen/logrus"
+    "gorm.io/gorm"
+    "servify/internal/models"
+)
+
+type WebSocketMessage struct {
+	Type      string      `json:"type"`
+	Data      interface{} `json:"data"`
+	SessionID string      `json:"session_id"`
+	Timestamp time.Time   `json:"timestamp"`
+}
+
+type WebSocketClient struct {
+	ID        string
+	SessionID string
+	Conn      *websocket.Conn
+	Send      chan WebSocketMessage
+	Hub       *WebSocketHub
+}
+
+type WebSocketHub struct {
+    clients    map[string]*WebSocketClient
+    broadcast  chan WebSocketMessage
+    register   chan *WebSocketClient
+    unregister chan *WebSocketClient
+    mutex      sync.RWMutex
+    // 可选：用于直接在WS层调用AI服务（未设置时则仅广播）
+    aiService  AIServiceInterface
+    // 可选：用于将文本消息落库（如未设置则仅记录日志）
+    db         *gorm.DB
+}
+
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {goCover_649b36dcf066__133[0] = 1 ; goCover_649b36dcf066__133[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__133[2] = 133 ; goCover_649b36dcf066__133[3] = 1;
+		return true // 生产环境需要验证源
+	},
+}
+
+func NewWebSocketHub() *WebSocketHub {goCover_649b36dcf066__134[0] = 1 ; goCover_649b36dcf066__134[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__134[2] = 134 ; goCover_649b36dcf066__134[3] = 1;
+    return &WebSocketHub{
+        clients:    make(map[string]*WebSocketClient),
+        broadcast:  make(chan WebSocketMessage),
+        register:   make(chan *WebSocketClient),
+        unregister: make(chan *WebSocketClient),
+    }
+}
+
+// SetAIService 为WebSocketHub注入AI服务（可选）
+func (h *WebSocketHub) SetAIService(ai AIServiceInterface) {goCover_649b36dcf066__135[0] = 1 ; goCover_649b36dcf066__135[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__135[2] = 135 ; goCover_649b36dcf066__135[3] = 1;
+    h.mutex.Lock()
+    defer h.mutex.Unlock()
+    h.aiService = ai
+}
+
+// SetDB 为 WebSocketHub 注入可选的数据库实例，用于持久化消息
+func (h *WebSocketHub) SetDB(db *gorm.DB) {goCover_649b36dcf066__136[0] = 1 ; goCover_649b36dcf066__136[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__136[2] = 136 ; goCover_649b36dcf066__136[3] = 1;
+    h.mutex.Lock()
+    defer h.mutex.Unlock()
+    h.db = db
+}
+
+func (h *WebSocketHub) Run() {goCover_649b36dcf066__137[0] = 12 ; goCover_649b36dcf066__137[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__137[2] = 137 ; goCover_649b36dcf066__137[3] = 1;
+	for {goCover_649b36dcf066__137[4] = 1;
+		select {
+		case client := <-h.register:goCover_649b36dcf066__137[5] = 1;
+			h.mutex.Lock()
+			h.clients[client.ID] = client
+			h.mutex.Unlock()
+			logrus.Infof("Client %s connected", client.ID)
+
+		case client := <-h.unregister:goCover_649b36dcf066__137[6] = 1;
+			h.mutex.Lock()
+			if _, ok := h.clients[client.ID]; ok {goCover_649b36dcf066__137[10] = 1;
+				delete(h.clients, client.ID)
+				close(client.Send)
+				logrus.Infof("Client %s disconnected", client.ID)
+			}
+			goCover_649b36dcf066__137[7] = 1;h.mutex.Unlock()
+
+		case message := <-h.broadcast:goCover_649b36dcf066__137[8] = 1;
+			h.mutex.RLock()
+			for _, client := range h.clients {goCover_649b36dcf066__137[11] = 1;
+				if message.SessionID == "" || client.SessionID == message.SessionID {goCover_649b36dcf066__137[12] = 1;
+					select {
+					case client.Send <- message:goCover_649b36dcf066__137[13] = 1;
+					default:goCover_649b36dcf066__137[14] = 1;
+						close(client.Send)
+						delete(h.clients, client.ID)
+					}
+				}
+			}
+			goCover_649b36dcf066__137[9] = 1;h.mutex.RUnlock()
+		}
+	}
+}
+
+func (h *WebSocketHub) HandleWebSocket(c *gin.Context) {goCover_649b36dcf066__138[0] = 5 ; goCover_649b36dcf066__138[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__138[2] = 138 ; goCover_649b36dcf066__138[3] = 1;
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {goCover_649b36dcf066__138[6] = 1;
+		logrus.Error("WebSocket upgrade failed:", err)
+		return
+	}
+
+	goCover_649b36dcf066__138[4] = 1;sessionID := c.Query("session_id")
+	if sessionID == "" {goCover_649b36dcf066__138[7] = 1;
+		sessionID = fmt.Sprintf("session_%d", time.Now().UnixNano())
+	}
+
+	goCover_649b36dcf066__138[5] = 1;client := &WebSocketClient{
+		ID:        fmt.Sprintf("client_%d", time.Now().UnixNano()),
+		SessionID: sessionID,
+		Conn:      conn,
+		Send:      make(chan WebSocketMessage, 256),
+		Hub:       h,
+	}
+
+	h.register <- client
+
+	go client.writePump()
+	go client.readPump()
+}
+
+func (c *WebSocketClient) readPump() {goCover_649b36dcf066__139[0] = 17 ; goCover_649b36dcf066__139[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__139[2] = 139 ; goCover_649b36dcf066__139[3] = 1;
+	defer func() {goCover_649b36dcf066__139[6] = 1;
+		c.Hub.unregister <- c
+		c.Conn.Close()
+	}()
+
+	goCover_649b36dcf066__139[4] = 1;c.Conn.SetReadLimit(512)
+	c.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	c.Conn.SetPongHandler(func(string) error {goCover_649b36dcf066__139[7] = 1;
+		c.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+
+	goCover_649b36dcf066__139[5] = 1;for {goCover_649b36dcf066__139[8] = 1;
+		_, messageBytes, err := c.Conn.ReadMessage()
+		if err != nil {goCover_649b36dcf066__139[11] = 1;
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {goCover_649b36dcf066__139[13] = 1;
+				logrus.Errorf("WebSocket error: %v", err)
+			}
+			goCover_649b36dcf066__139[12] = 1;break
+		}
+
+		goCover_649b36dcf066__139[9] = 1;var message WebSocketMessage
+		if err := json.Unmarshal(messageBytes, &message); err != nil {goCover_649b36dcf066__139[14] = 1;
+			logrus.Error("Invalid message format:", err)
+			continue
+		}
+
+		goCover_649b36dcf066__139[10] = 1;message.SessionID = c.SessionID
+		message.Timestamp = time.Now()
+
+		// 处理不同类型的消息
+		switch message.Type {
+		case "text-message":goCover_649b36dcf066__139[15] = 1;
+			c.handleTextMessage(message)
+		case "webrtc-offer":goCover_649b36dcf066__139[16] = 1;
+			c.handleWebRTCOffer(message)
+		case "webrtc-answer":goCover_649b36dcf066__139[17] = 1;
+			c.handleWebRTCAnswer(message)
+		case "webrtc-candidate":goCover_649b36dcf066__139[18] = 1;
+			c.handleWebRTCCandidate(message)
+		default:goCover_649b36dcf066__139[19] = 1;
+			logrus.Warnf("Unknown message type: %s", message.Type)
+		}
+	}
+}
+
+func (c *WebSocketClient) writePump() {goCover_649b36dcf066__140[0] = 10 ; goCover_649b36dcf066__140[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__140[2] = 140 ; goCover_649b36dcf066__140[3] = 1;
+	ticker := time.NewTicker(54 * time.Second)
+	defer func() {goCover_649b36dcf066__140[5] = 1;
+		ticker.Stop()
+		c.Conn.Close()
+	}()
+
+	goCover_649b36dcf066__140[4] = 1;for {goCover_649b36dcf066__140[6] = 1;
+		select {
+		case message, ok := <-c.Send:goCover_649b36dcf066__140[7] = 1;
+			c.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if !ok {goCover_649b36dcf066__140[10] = 1;
+				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+
+			goCover_649b36dcf066__140[8] = 1;if err := c.Conn.WriteJSON(message); err != nil {goCover_649b36dcf066__140[11] = 1;
+				logrus.Error("WriteJSON error:", err)
+				return
+			}
+
+		case <-ticker.C:goCover_649b36dcf066__140[9] = 1;
+			c.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {goCover_649b36dcf066__140[12] = 1;
+				return
+			}
+		}
+	}
+}
+
+func (c *WebSocketClient) handleTextMessage(message WebSocketMessage) {goCover_649b36dcf066__141[0] = 3 ; goCover_649b36dcf066__141[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__141[2] = 141 ; goCover_649b36dcf066__141[3] = 1;
+	// 保存消息到数据库
+	if err := c.persistTextMessage(message); err != nil {goCover_649b36dcf066__141[5] = 1;
+		logrus.Warnf("Failed to persist text message: %v", err)
+		// 不影响消息处理流程，继续执行
+	}
+
+	// 转发给 AI 服务处理
+	goCover_649b36dcf066__141[4] = 1;go c.processMessageWithAI(message)
+
+	// 广播消息
+	c.Hub.broadcast <- message
+}
+
+func (c *WebSocketClient) handleWebRTCOffer(message WebSocketMessage) {goCover_649b36dcf066__142[0] = 1 ; goCover_649b36dcf066__142[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__142[2] = 142 ; goCover_649b36dcf066__142[3] = 1;
+	// 处理 WebRTC offer
+	// 集成 WebRTC 服务处理
+	logrus.Infof("Received WebRTC offer from session %s", c.SessionID)
+
+	// 这里应该调用 WebRTC 服务来处理 offer
+	// 并将 answer 返回给客户端
+	/*
+	if webrtcService != nil {
+		answer, err := webrtcService.HandleOffer(c.SessionID, message.Data)
+		if err != nil {
+			logrus.Errorf("Failed to handle WebRTC offer: %v", err)
+			return
+		}
+
+		// 发送 answer 回客户端
+		response := WebSocketMessage{
+			Type:      "webrtc-answer",
+			Data:      answer,
+			SessionID: c.SessionID,
+			Timestamp: time.Now(),
+		}
+		c.Send <- response
+	}
+	*/
+
+	// 当前实现：简单转发给同一会话的其他客户端
+	c.Hub.broadcast <- message
+}
+
+func (c *WebSocketClient) handleWebRTCAnswer(message WebSocketMessage) {goCover_649b36dcf066__143[0] = 1 ; goCover_649b36dcf066__143[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__143[2] = 143 ; goCover_649b36dcf066__143[3] = 1;
+	// 处理 WebRTC answer
+	logrus.Infof("Received WebRTC answer from session %s", c.SessionID)
+}
+
+func (c *WebSocketClient) handleWebRTCCandidate(message WebSocketMessage) {goCover_649b36dcf066__144[0] = 1 ; goCover_649b36dcf066__144[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__144[2] = 144 ; goCover_649b36dcf066__144[3] = 1;
+	// 处理 ICE candidate
+	logrus.Infof("Received ICE candidate from session %s", c.SessionID)
+}
+
+func (h *WebSocketHub) SendToSession(sessionID string, message WebSocketMessage) {goCover_649b36dcf066__145[0] = 1 ; goCover_649b36dcf066__145[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__145[2] = 145 ; goCover_649b36dcf066__145[3] = 1;
+	h.broadcast <- WebSocketMessage{
+		Type:      message.Type,
+		Data:      message.Data,
+		SessionID: sessionID,
+		Timestamp: time.Now(),
+	}
+}
+
+func (h *WebSocketHub) GetClientCount() int {goCover_649b36dcf066__146[0] = 1 ; goCover_649b36dcf066__146[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__146[2] = 146 ; goCover_649b36dcf066__146[3] = 1;
+	h.mutex.RLock()
+	defer h.mutex.RUnlock()
+	return len(h.clients)
+}
+
+// persistTextMessage 持久化文本消息
+func (c *WebSocketClient) persistTextMessage(message WebSocketMessage) error {goCover_649b36dcf066__147[0] = 15 ; goCover_649b36dcf066__147[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__147[2] = 147 ; goCover_649b36dcf066__147[3] = 1;
+    // 当前简单实现：记录到日志
+    // 生产环境中应该保存到数据库中的 messages 表
+    logrus.WithFields(logrus.Fields{
+        "session_id": c.SessionID,
+        "client_id":  c.ID,
+        "type":       message.Type,
+        "timestamp":  message.Timestamp,
+    }).Info("Text message persisted")
+
+    // 若未配置数据库，则直接返回
+    hub := c.Hub
+    hub.mutex.RLock()
+    db := hub.db
+    hub.mutex.RUnlock()
+    if db == nil {goCover_649b36dcf066__147[8] = 1;
+        return nil
+    }
+
+    // 确保会话存在（以 SessionID 作为主键），若不存在则创建
+    goCover_649b36dcf066__147[4] = 1;var sess models.Session
+    if err := db.First(&sess, "id = ?", c.SessionID).Error; err != nil {goCover_649b36dcf066__147[9] = 1;
+        if err == gorm.ErrRecordNotFound {goCover_649b36dcf066__147[10] = 1;
+            now := time.Now()
+            sess = models.Session{
+                ID:        c.SessionID,
+                Status:    "active",
+                Platform:  "web",
+                StartedAt: now,
+                CreatedAt: now,
+                UpdatedAt: now,
+            }
+            if err := db.Create(&sess).Error; err != nil {goCover_649b36dcf066__147[11] = 1;
+                return fmt.Errorf("create session: %w", err)
+            }
+        } else{ goCover_649b36dcf066__147[12] = 1;{
+            return err
+        }}
+    }
+
+    // 提取文本内容
+    goCover_649b36dcf066__147[5] = 1;var content string
+    switch v := message.Data.(type) {
+    case map[string]interface{}:goCover_649b36dcf066__147[13] = 1;
+        if s, ok := v["content"].(string); ok {goCover_649b36dcf066__147[16] = 1;
+            content = s
+        }
+    case string:goCover_649b36dcf066__147[14] = 1;
+        content = v
+    default:goCover_649b36dcf066__147[15] = 1;
+        // 其他格式不处理
+    }
+
+    // 插入消息记录
+    goCover_649b36dcf066__147[6] = 1;m := &models.Message{
+        SessionID: c.SessionID,
+        UserID:    0,
+        Content:   content,
+        Type:      "text",
+        Sender:    "user",
+        CreatedAt: time.Now(),
+    }
+    if err := db.Create(m).Error; err != nil {goCover_649b36dcf066__147[17] = 1;
+        return fmt.Errorf("persist message: %w", err)
+    }
+    goCover_649b36dcf066__147[7] = 1;return nil
+}
+
+// processMessageWithAI 使用 AI 处理消息
+func (c *WebSocketClient) processMessageWithAI(message WebSocketMessage) {goCover_649b36dcf066__148[0] = 13 ; goCover_649b36dcf066__148[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__148[2] = 148 ; goCover_649b36dcf066__148[3] = 1;
+    // 若未注入AI服务，直接返回
+    h := c.Hub
+    h.mutex.RLock()
+    ai := h.aiService
+    h.mutex.RUnlock()
+    if ai == nil {goCover_649b36dcf066__148[7] = 1;
+        logrus.WithFields(logrus.Fields{
+            "session_id":  c.SessionID,
+            "message_type": message.Type,
+        }).Debug("AI service not configured; skipping AI processing")
+        return
+    }
+
+    // 提取文本内容
+    goCover_649b36dcf066__148[4] = 1;var content string
+    switch v := message.Data.(type) {
+    case map[string]interface{}:goCover_649b36dcf066__148[8] = 1;
+        if s, ok := v["content"].(string); ok {goCover_649b36dcf066__148[11] = 1;
+            content = s
+        }
+    case string:goCover_649b36dcf066__148[9] = 1;
+        content = v
+    default:goCover_649b36dcf066__148[10] = 1;
+        // 非预期格式
+        logrus.Warnf("Unsupported message data type for AI processing: %T", v)
+        return
+    }
+    goCover_649b36dcf066__148[5] = 1;if strings.TrimSpace(content) == "" {goCover_649b36dcf066__148[12] = 1;
+        return
+    }
+
+    // 异步调用AI
+    goCover_649b36dcf066__148[6] = 1;go func(sessionID string, text string) {goCover_649b36dcf066__148[13] = 1;
+        ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+        defer cancel()
+        resp, err := ai.ProcessQuery(ctx, text, sessionID)
+        if err != nil {goCover_649b36dcf066__148[15] = 1;
+            logrus.Errorf("AI processing failed: %v", err)
+            return
+        }
+        // 推送AI回复
+        goCover_649b36dcf066__148[14] = 1;c.Hub.SendToSession(sessionID, WebSocketMessage{
+            Type: "ai-response",
+            Data: map[string]interface{}{
+                "content":    resp.Content,
+                "confidence": resp.Confidence,
+                "source":     resp.Source,
+            },
+            SessionID: sessionID,
+            Timestamp: time.Now(),
+        })
+    }(c.SessionID, content)
+}

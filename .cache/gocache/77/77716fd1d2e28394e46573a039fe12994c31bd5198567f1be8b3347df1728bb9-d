@@ -1,0 +1,19 @@
+=== RUN   TestAIHandler_Status_And_Query
+time="2025-10-27T23:38:04+08:00" level=info msg="Knowledge base initialized with default documents"
+--- PASS: TestAIHandler_Status_And_Query (0.00s)
+=== RUN   TestWebSocketStatsEndpoint
+--- PASS: TestWebSocketStatsEndpoint (0.00s)
+=== RUN   TestEnhancedHealth_Ready_Health
+time="2025-10-27T23:38:04+08:00" level=info msg="Knowledge base initialized with default documents"
+--- PASS: TestEnhancedHealth_Ready_Health (0.00s)
+=== RUN   TestLabelsKey_StableOrder
+--- PASS: TestLabelsKey_StableOrder (0.00s)
+=== RUN   TestMetricsIngest_BasicFlow
+--- PASS: TestMetricsIngest_BasicFlow (0.00s)
+=== RUN   TestParseSizeToBytes
+--- PASS: TestParseSizeToBytes (0.00s)
+=== RUN   TestIsAllowedType
+--- PASS: TestIsAllowedType (0.00s)
+PASS
+coverage: 13.7% of statements
+ok  	servify/internal/handlers	0.060s	coverage: 13.7% of statements

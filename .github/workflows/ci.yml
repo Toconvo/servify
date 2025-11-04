@@ -42,8 +42,14 @@ jobs:
       - name: Tidy
         run: go mod tidy
 
-      - name: Build
+      - name: Build (standard)
         run: make build
+
+      - name: Build Server Entry
+        run: go build -o bin/servify ./cmd/server
+
+      - name: Build (weknora tag)
+        run: go build -tags weknora -o bin/servify-cli-weknora ./cmd/cli
 
       - name: Test
         env:

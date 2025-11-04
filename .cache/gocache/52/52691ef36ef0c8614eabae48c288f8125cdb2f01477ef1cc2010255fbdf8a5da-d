@@ -1,0 +1,291 @@
+//line /Users/cui/Workspaces/servify/internal/services/webrtc.go:1:1
+package services
+
+import (
+	"encoding/json"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/pion/webrtc/v3"
+	"github.com/sirupsen/logrus"
+)
+
+type WebRTCService struct {
+	api         *webrtc.API
+	connections map[string]*WebRTCConnection
+	mutex       sync.RWMutex
+	stunServer  string
+	wsHub       *WebSocketHub
+}
+
+type WebRTCConnection struct {
+	ID             string
+	SessionID      string
+	PeerConnection *webrtc.PeerConnection
+	DataChannel    *webrtc.DataChannel
+	Status         string
+	CreatedAt      time.Time
+}
+
+type WebRTCSignal struct {
+	Type      string      `json:"type"`
+	SessionID string      `json:"session_id"`
+	Data      interface{} `json:"data"`
+}
+
+func NewWebRTCService(stunServer string, wsHub *WebSocketHub) *WebRTCService {goCover_649b36dcf066__123[0] = 1 ; goCover_649b36dcf066__123[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__123[2] = 123 ; goCover_649b36dcf066__123[3] = 1;
+	// 创建 WebRTC API
+	api := webrtc.NewAPI()
+
+	return &WebRTCService{
+		api:         api,
+		connections: make(map[string]*WebRTCConnection),
+		stunServer:  stunServer,
+		wsHub:       wsHub,
+	}
+}
+
+func (s *WebRTCService) CreatePeerConnection(sessionID string) (*WebRTCConnection, error) {goCover_649b36dcf066__124[0] = 18 ; goCover_649b36dcf066__124[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__124[2] = 124 ; goCover_649b36dcf066__124[3] = 1;
+	config := webrtc.Configuration{
+		ICEServers: []webrtc.ICEServer{
+			{
+				URLs: []string{s.stunServer},
+			},
+		},
+	}
+
+	peerConnection, err := s.api.NewPeerConnection(config)
+	if err != nil {goCover_649b36dcf066__124[8] = 1;
+		return nil, fmt.Errorf("failed to create peer connection: %w", err)
+	}
+
+	goCover_649b36dcf066__124[4] = 1;connectionID := fmt.Sprintf("webrtc_%s_%d", sessionID, time.Now().UnixNano())
+
+	conn := &WebRTCConnection{
+		ID:             connectionID,
+		SessionID:      sessionID,
+		PeerConnection: peerConnection,
+		Status:         "created",
+		CreatedAt:      time.Now(),
+	}
+
+	// 设置连接状态回调
+	peerConnection.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {goCover_649b36dcf066__124[9] = 1;
+		logrus.Infof("WebRTC connection %s state changed to %s", connectionID, state.String())
+		conn.Status = state.String()
+
+		// 通知客户端状态变化
+		s.wsHub.SendToSession(sessionID, WebSocketMessage{
+			Type: "webrtc-state-change",
+			Data: map[string]interface{}{
+				"connection_id": connectionID,
+				"state":         state.String(),
+			},
+		})
+	})
+
+	// 处理 ICE 候选
+	goCover_649b36dcf066__124[5] = 1;peerConnection.OnICECandidate(func(candidate *webrtc.ICECandidate) {goCover_649b36dcf066__124[10] = 1;
+		if candidate == nil {goCover_649b36dcf066__124[13] = 1;
+			return
+		}
+
+		goCover_649b36dcf066__124[11] = 1;logrus.Infof("New ICE candidate for connection %s", connectionID)
+
+		candidateData, err := json.Marshal(candidate.ToJSON())
+		if err != nil {goCover_649b36dcf066__124[14] = 1;
+			logrus.Error("Failed to marshal ICE candidate:", err)
+			return
+		}
+
+		goCover_649b36dcf066__124[12] = 1;s.wsHub.SendToSession(sessionID, WebSocketMessage{
+			Type: "webrtc-candidate",
+			Data: map[string]interface{}{
+				"connection_id": connectionID,
+				"candidate":     json.RawMessage(candidateData),
+			},
+		})
+	})
+
+	// 处理数据通道
+	goCover_649b36dcf066__124[6] = 1;peerConnection.OnDataChannel(func(dc *webrtc.DataChannel) {goCover_649b36dcf066__124[15] = 1;
+		logrus.Infof("New data channel for connection %s: %s", connectionID, dc.Label())
+		conn.DataChannel = dc
+
+		dc.OnOpen(func() {goCover_649b36dcf066__124[18] = 1;
+			logrus.Infof("Data channel %s opened", dc.Label())
+		})
+
+		goCover_649b36dcf066__124[16] = 1;dc.OnMessage(func(msg webrtc.DataChannelMessage) {goCover_649b36dcf066__124[19] = 1;
+			logrus.Infof("Received message on data channel: %s", string(msg.Data))
+
+			// 转发消息给客户端
+			s.wsHub.SendToSession(sessionID, WebSocketMessage{
+				Type: "data-channel-message",
+				Data: map[string]interface{}{
+					"connection_id": connectionID,
+					"message":       string(msg.Data),
+				},
+			})
+		})
+
+		goCover_649b36dcf066__124[17] = 1;dc.OnClose(func() {goCover_649b36dcf066__124[20] = 1;
+			logrus.Infof("Data channel %s closed", dc.Label())
+		})
+	})
+
+	goCover_649b36dcf066__124[7] = 1;s.mutex.Lock()
+	s.connections[connectionID] = conn
+	s.mutex.Unlock()
+
+	return conn, nil
+}
+
+func (s *WebRTCService) HandleOffer(sessionID string, offer webrtc.SessionDescription) (*webrtc.SessionDescription, error) {goCover_649b36dcf066__125[0] = 9 ; goCover_649b36dcf066__125[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__125[2] = 125 ; goCover_649b36dcf066__125[3] = 1;
+	conn, err := s.CreatePeerConnection(sessionID)
+	if err != nil {goCover_649b36dcf066__125[8] = 1;
+		return nil, err
+	}
+
+	// 设置远程描述
+	goCover_649b36dcf066__125[4] = 1;err = conn.PeerConnection.SetRemoteDescription(offer)
+	if err != nil {goCover_649b36dcf066__125[9] = 1;
+		return nil, fmt.Errorf("failed to set remote description: %w", err)
+	}
+
+	// 创建答案
+	goCover_649b36dcf066__125[5] = 1;answer, err := conn.PeerConnection.CreateAnswer(nil)
+	if err != nil {goCover_649b36dcf066__125[10] = 1;
+		return nil, fmt.Errorf("failed to create answer: %w", err)
+	}
+
+	// 设置本地描述
+	goCover_649b36dcf066__125[6] = 1;err = conn.PeerConnection.SetLocalDescription(answer)
+	if err != nil {goCover_649b36dcf066__125[11] = 1;
+		return nil, fmt.Errorf("failed to set local description: %w", err)
+	}
+
+	goCover_649b36dcf066__125[7] = 1;logrus.Infof("Created WebRTC answer for session %s", sessionID)
+
+	return &answer, nil
+}
+
+func (s *WebRTCService) HandleAnswer(sessionID string, answer webrtc.SessionDescription) error {goCover_649b36dcf066__126[0] = 5 ; goCover_649b36dcf066__126[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__126[2] = 126 ; goCover_649b36dcf066__126[3] = 1;
+	conn, err := s.getConnectionBySessionID(sessionID)
+	if err != nil {goCover_649b36dcf066__126[6] = 1;
+		return err
+	}
+
+	goCover_649b36dcf066__126[4] = 1;err = conn.PeerConnection.SetRemoteDescription(answer)
+	if err != nil {goCover_649b36dcf066__126[7] = 1;
+		return fmt.Errorf("failed to set remote description: %w", err)
+	}
+
+	goCover_649b36dcf066__126[5] = 1;logrus.Infof("Set WebRTC answer for session %s", sessionID)
+
+	return nil
+}
+
+func (s *WebRTCService) HandleICECandidate(sessionID string, candidate webrtc.ICECandidateInit) error {goCover_649b36dcf066__127[0] = 5 ; goCover_649b36dcf066__127[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__127[2] = 127 ; goCover_649b36dcf066__127[3] = 1;
+	conn, err := s.getConnectionBySessionID(sessionID)
+	if err != nil {goCover_649b36dcf066__127[6] = 1;
+		return err
+	}
+
+	goCover_649b36dcf066__127[4] = 1;err = conn.PeerConnection.AddICECandidate(candidate)
+	if err != nil {goCover_649b36dcf066__127[7] = 1;
+		return fmt.Errorf("failed to add ICE candidate: %w", err)
+	}
+
+	goCover_649b36dcf066__127[5] = 1;logrus.Infof("Added ICE candidate for session %s", sessionID)
+
+	return nil
+}
+
+func (s *WebRTCService) CloseConnection(sessionID string) error {goCover_649b36dcf066__128[0] = 6 ; goCover_649b36dcf066__128[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__128[2] = 128 ; goCover_649b36dcf066__128[3] = 1;
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	for id, conn := range s.connections {goCover_649b36dcf066__128[5] = 1;
+		if conn.SessionID == sessionID {goCover_649b36dcf066__128[6] = 1;
+			err := conn.PeerConnection.Close()
+			if err != nil {goCover_649b36dcf066__128[8] = 1;
+				logrus.Errorf("Failed to close peer connection %s: %v", id, err)
+			}
+			goCover_649b36dcf066__128[7] = 1;delete(s.connections, id)
+			logrus.Infof("Closed WebRTC connection %s", id)
+		}
+	}
+
+	goCover_649b36dcf066__128[4] = 1;return nil
+}
+
+func (s *WebRTCService) getConnectionBySessionID(sessionID string) (*WebRTCConnection, error) {goCover_649b36dcf066__129[0] = 4 ; goCover_649b36dcf066__129[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__129[2] = 129 ; goCover_649b36dcf066__129[3] = 1;
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
+	for _, conn := range s.connections {goCover_649b36dcf066__129[5] = 1;
+		if conn.SessionID == sessionID {goCover_649b36dcf066__129[6] = 1;
+			return conn, nil
+		}
+	}
+
+	goCover_649b36dcf066__129[4] = 1;return nil, fmt.Errorf("connection not found for session %s", sessionID)
+}
+
+func (s *WebRTCService) GetConnectionStats(sessionID string) (map[string]interface{}, error) {goCover_649b36dcf066__130[0] = 5 ; goCover_649b36dcf066__130[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__130[2] = 130 ; goCover_649b36dcf066__130[3] = 1;
+	conn, err := s.getConnectionBySessionID(sessionID)
+	if err != nil {goCover_649b36dcf066__130[6] = 1;
+		return nil, err
+	}
+
+	// 获取连接基本信息
+	goCover_649b36dcf066__130[4] = 1;connState := conn.PeerConnection.ConnectionState()
+	iceConnState := conn.PeerConnection.ICEConnectionState()
+	iceGatheringState := conn.PeerConnection.ICEGatheringState()
+
+	statsMap := map[string]interface{}{
+		"connection_id":        conn.ID,
+		"session_id":           conn.SessionID,
+		"connection_state":     connState.String(),
+		"ice_connection_state": iceConnState.String(),
+		"ice_gathering_state":  iceGatheringState.String(),
+		"created_at":           conn.CreatedAt,
+		"status":               conn.Status,
+	}
+
+	// 获取数据通道信息
+	if conn.DataChannel != nil {goCover_649b36dcf066__130[7] = 1;
+		statsMap["data_channel"] = map[string]interface{}{
+			"label":       conn.DataChannel.Label(),
+			"ready_state": conn.DataChannel.ReadyState().String(),
+		}
+	}
+
+	goCover_649b36dcf066__130[5] = 1;return statsMap, nil
+}
+
+func (s *WebRTCService) SendDataChannelMessage(sessionID, message string) error {goCover_649b36dcf066__131[0] = 7 ; goCover_649b36dcf066__131[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__131[2] = 131 ; goCover_649b36dcf066__131[3] = 1;
+	conn, err := s.getConnectionBySessionID(sessionID)
+	if err != nil {goCover_649b36dcf066__131[7] = 1;
+		return err
+	}
+
+	goCover_649b36dcf066__131[4] = 1;if conn.DataChannel == nil {goCover_649b36dcf066__131[8] = 1;
+		return fmt.Errorf("data channel not available for session %s", sessionID)
+	}
+
+	goCover_649b36dcf066__131[5] = 1;err = conn.DataChannel.SendText(message)
+	if err != nil {goCover_649b36dcf066__131[9] = 1;
+		return fmt.Errorf("failed to send data channel message: %w", err)
+	}
+
+	goCover_649b36dcf066__131[6] = 1;return nil
+}
+
+func (s *WebRTCService) GetConnectionCount() int {goCover_649b36dcf066__132[0] = 1 ; goCover_649b36dcf066__132[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__132[2] = 132 ; goCover_649b36dcf066__132[3] = 1;
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	return len(s.connections)
+}

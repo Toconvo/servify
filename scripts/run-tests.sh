@@ -12,10 +12,12 @@ echo "================================"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 OUT_DIR="$SCRIPT_DIR/test-results"
+GOWORK_CACHE_DIR="$PROJECT_ROOT/.cache"
+export GOCACHE="$GOWORK_CACHE_DIR/gocache"
 cd "$PROJECT_ROOT"
 
 # 创建测试输出目录
-mkdir -p "$OUT_DIR"
+mkdir -p "$OUT_DIR" "$GOCACHE"
 
 # 运行所有测试并生成覆盖率报告
 echo "📊 Running tests with coverage (no race)..."

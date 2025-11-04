@@ -139,9 +139,12 @@ func main() {
 
     // 初始化实时与路由服务（对齐 CLI 端点）
     wsHub := services.NewWebSocketHub()
+    wsHub.SetDB(db)
     webrtcService := services.NewWebRTCService(cfg.WebRTC.STUNServer, wsHub)
     messageRouter := services.NewMessageRouter(aiService, wsHub, db)
     go wsHub.Run()
+    // 使 WebSocket 文本消息可直接触发 AI 回复
+    wsHub.SetAIService(aiService)
     if err := messageRouter.Start(); err != nil {
         appLogger.Fatalf("Failed to start message router: %v", err)
     }
@@ -219,6 +222,10 @@ func main() {
             aiAPI.PUT("/weknora/disable", aiHandler.DisableWeKnora)
             aiAPI.POST("/circuit-breaker/reset", aiHandler.ResetCircuitBreaker)
         }
+
+        // 轻量指标上报（客户端/前端）
+        ingest := handlers.NewMetricsIngestHandler(handlers.NewMetricsAggregator())
+        v1.POST("/metrics/ingest", ingest.Ingest)
     }
 
     // 静态资源（与 CLI 对齐）

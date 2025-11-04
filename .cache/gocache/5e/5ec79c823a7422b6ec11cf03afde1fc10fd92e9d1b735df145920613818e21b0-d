@@ -1,0 +1,418 @@
+//line /Users/cui/Workspaces/servify/internal/services/customer_service.go:1:1
+package services
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"servify/internal/models"
+
+	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
+)
+
+// CustomerService 客户管理服务
+type CustomerService struct {
+	db     *gorm.DB
+	logger *logrus.Logger
+}
+
+// NewCustomerService 创建客户服务
+func NewCustomerService(db *gorm.DB, logger *logrus.Logger) *CustomerService {goCover_649b36dcf066__55[0] = 3 ; goCover_649b36dcf066__55[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__55[2] = 55 ; goCover_649b36dcf066__55[3] = 1;
+	if logger == nil {goCover_649b36dcf066__55[5] = 1;
+		logger = logrus.New()
+	}
+
+	goCover_649b36dcf066__55[4] = 1;return &CustomerService{
+		db:     db,
+		logger: logger,
+	}
+}
+
+// CustomerCreateRequest 创建客户请求
+type CustomerCreateRequest struct {
+	Username string `json:"username" binding:"required"`
+	Email    string `json:"email" binding:"required,email"`
+	Name     string `json:"name"`
+	Phone    string `json:"phone"`
+	Company  string `json:"company"`
+	Industry string `json:"industry"`
+	Source   string `json:"source"`
+	Tags     string `json:"tags"`
+	Notes    string `json:"notes"`
+	Priority string `json:"priority"`
+}
+
+// CustomerUpdateRequest 更新客户请求
+type CustomerUpdateRequest struct {
+	Name     *string `json:"name"`
+	Phone    *string `json:"phone"`
+	Company  *string `json:"company"`
+	Industry *string `json:"industry"`
+	Source   *string `json:"source"`
+	Tags     *string `json:"tags"`
+	Notes    *string `json:"notes"`
+	Priority *string `json:"priority"`
+	Status   *string `json:"status"`
+}
+
+// CustomerListRequest 客户列表请求
+type CustomerListRequest struct {
+	Page      int      `form:"page,default=1"`
+	PageSize  int      `form:"page_size,default=20"`
+	Search    string   `form:"search"`
+	Industry  []string `form:"industry"`
+	Source    []string `form:"source"`
+	Priority  []string `form:"priority"`
+	Status    []string `form:"status"`
+	Tags      string   `form:"tags"`
+	SortBy    string   `form:"sort_by,default=created_at"`
+	SortOrder string   `form:"sort_order,default=desc"`
+}
+
+// CreateCustomer 创建客户
+func (s *CustomerService) CreateCustomer(ctx context.Context, req *CustomerCreateRequest) (*models.User, error) {goCover_649b36dcf066__56[0] = 11 ; goCover_649b36dcf066__56[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__56[2] = 56 ; goCover_649b36dcf066__56[3] = 1;
+	// 检查用户名和邮箱是否已存在
+	var existingUser models.User
+	if err := s.db.Where("username = ? OR email = ?", req.Username, req.Email).First(&existingUser).Error; err == nil {goCover_649b36dcf066__56[9] = 1;
+		return nil, fmt.Errorf("username or email already exists")
+	}
+
+	// 创建用户
+	goCover_649b36dcf066__56[4] = 1;user := &models.User{
+		Username: req.Username,
+		Email:    req.Email,
+		Name:     req.Name,
+		Phone:    req.Phone,
+		Role:     "customer",
+		Status:   "active",
+	}
+
+	if err := s.db.Create(user).Error; err != nil {goCover_649b36dcf066__56[10] = 1;
+		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	// 创建客户扩展信息
+	goCover_649b36dcf066__56[5] = 1;customer := &models.Customer{
+		UserID:   user.ID,
+		Company:  req.Company,
+		Industry: req.Industry,
+		Source:   req.Source,
+		Tags:     req.Tags,
+		Notes:    req.Notes,
+		Priority: req.Priority,
+	}
+
+	if customer.Source == "" {goCover_649b36dcf066__56[11] = 1;
+		customer.Source = "web"
+	}
+	goCover_649b36dcf066__56[6] = 1;if customer.Priority == "" {goCover_649b36dcf066__56[12] = 1;
+		customer.Priority = "normal"
+	}
+
+	goCover_649b36dcf066__56[7] = 1;if err := s.db.Create(customer).Error; err != nil {goCover_649b36dcf066__56[13] = 1;
+		// 如果创建客户信息失败，删除已创建的用户
+		s.db.Delete(user)
+		return nil, fmt.Errorf("failed to create customer info: %w", err)
+	}
+
+	goCover_649b36dcf066__56[8] = 1;s.logger.Infof("Created customer %d (%s)", user.ID, user.Email)
+
+	// 返回完整的客户信息
+	return s.GetCustomerByID(ctx, user.ID)
+}
+
+// GetCustomerByID 根据ID获取客户
+func (s *CustomerService) GetCustomerByID(ctx context.Context, customerID uint) (*models.User, error) {goCover_649b36dcf066__57[0] = 8 ; goCover_649b36dcf066__57[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__57[2] = 57 ; goCover_649b36dcf066__57[3] = 1;
+	var user models.User
+	err := s.db.Preload("Sessions", func(db *gorm.DB) *gorm.DB {goCover_649b36dcf066__57[7] = 1;
+		return db.Order("created_at DESC").Limit(10)
+	}).Preload("Tickets", func(db *gorm.DB) *gorm.DB {goCover_649b36dcf066__57[8] = 1;
+		return db.Order("created_at DESC").Limit(10)
+	}).First(&user, customerID).Error
+
+	goCover_649b36dcf066__57[4] = 1;if err != nil {goCover_649b36dcf066__57[9] = 1;
+		return nil, fmt.Errorf("customer not found: %w", err)
+	}
+
+	// 获取客户扩展信息
+	goCover_649b36dcf066__57[5] = 1;var customer models.Customer
+	if err := s.db.Where("user_id = ?", customerID).First(&customer).Error; err == nil {goCover_649b36dcf066__57[10] = 1;
+		// 将客户信息合并到用户对象中（这里可以使用自定义结构体）
+		user.Name = customer.User.Name
+	}
+
+	goCover_649b36dcf066__57[6] = 1;return &user, nil
+}
+
+// UpdateCustomer 更新客户信息
+func (s *CustomerService) UpdateCustomer(ctx context.Context, customerID uint, req *CustomerUpdateRequest) (*models.User, error) {goCover_649b36dcf066__58[0] = 25 ; goCover_649b36dcf066__58[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__58[2] = 58 ; goCover_649b36dcf066__58[3] = 1;
+	// 更新用户基本信息
+	userUpdates := make(map[string]interface{})
+	if req.Name != nil {goCover_649b36dcf066__58[15] = 1;
+		userUpdates["name"] = *req.Name
+	}
+	goCover_649b36dcf066__58[4] = 1;if req.Phone != nil {goCover_649b36dcf066__58[16] = 1;
+		userUpdates["phone"] = *req.Phone
+	}
+	goCover_649b36dcf066__58[5] = 1;if req.Status != nil {goCover_649b36dcf066__58[17] = 1;
+		userUpdates["status"] = *req.Status
+	}
+
+	goCover_649b36dcf066__58[6] = 1;if len(userUpdates) > 0 {goCover_649b36dcf066__58[18] = 1;
+		if err := s.db.Model(&models.User{}).Where("id = ?", customerID).Updates(userUpdates).Error; err != nil {goCover_649b36dcf066__58[19] = 1;
+			return nil, fmt.Errorf("failed to update user: %w", err)
+		}
+	}
+
+	// 更新客户扩展信息
+	goCover_649b36dcf066__58[7] = 1;customerUpdates := make(map[string]interface{})
+	if req.Company != nil {goCover_649b36dcf066__58[20] = 1;
+		customerUpdates["company"] = *req.Company
+	}
+	goCover_649b36dcf066__58[8] = 1;if req.Industry != nil {goCover_649b36dcf066__58[21] = 1;
+		customerUpdates["industry"] = *req.Industry
+	}
+	goCover_649b36dcf066__58[9] = 1;if req.Source != nil {goCover_649b36dcf066__58[22] = 1;
+		customerUpdates["source"] = *req.Source
+	}
+	goCover_649b36dcf066__58[10] = 1;if req.Tags != nil {goCover_649b36dcf066__58[23] = 1;
+		customerUpdates["tags"] = *req.Tags
+	}
+	goCover_649b36dcf066__58[11] = 1;if req.Notes != nil {goCover_649b36dcf066__58[24] = 1;
+		customerUpdates["notes"] = *req.Notes
+	}
+	goCover_649b36dcf066__58[12] = 1;if req.Priority != nil {goCover_649b36dcf066__58[25] = 1;
+		customerUpdates["priority"] = *req.Priority
+	}
+
+	goCover_649b36dcf066__58[13] = 1;if len(customerUpdates) > 0 {goCover_649b36dcf066__58[26] = 1;
+		if err := s.db.Model(&models.Customer{}).Where("user_id = ?", customerID).Updates(customerUpdates).Error; err != nil {goCover_649b36dcf066__58[27] = 1;
+			return nil, fmt.Errorf("failed to update customer: %w", err)
+		}
+	}
+
+	goCover_649b36dcf066__58[14] = 1;s.logger.Infof("Updated customer %d", customerID)
+
+	// 返回更新后的客户信息
+	return s.GetCustomerByID(ctx, customerID)
+}
+
+// ListCustomers 获取客户列表
+func (s *CustomerService) ListCustomers(ctx context.Context, req *CustomerListRequest) ([]CustomerInfo, int64, error) {goCover_649b36dcf066__59[0] = 19 ; goCover_649b36dcf066__59[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__59[2] = 59 ; goCover_649b36dcf066__59[3] = 1;
+	// 构建查询
+	query := s.db.Table("users").
+		Select("users.*, customers.company, customers.industry, customers.source, customers.tags, customers.notes, customers.priority").
+		Joins("LEFT JOIN customers ON users.id = customers.user_id").
+		Where("users.role = ?", "customer")
+
+	// 应用过滤条件
+	if len(req.Industry) > 0 {goCover_649b36dcf066__59[12] = 1;
+		query = query.Where("customers.industry IN ?", req.Industry)
+	}
+	goCover_649b36dcf066__59[4] = 1;if len(req.Source) > 0 {goCover_649b36dcf066__59[13] = 1;
+		query = query.Where("customers.source IN ?", req.Source)
+	}
+	goCover_649b36dcf066__59[5] = 1;if len(req.Priority) > 0 {goCover_649b36dcf066__59[14] = 1;
+		query = query.Where("customers.priority IN ?", req.Priority)
+	}
+	goCover_649b36dcf066__59[6] = 1;if len(req.Status) > 0 {goCover_649b36dcf066__59[15] = 1;
+		query = query.Where("users.status IN ?", req.Status)
+	}
+
+	// 标签过滤
+	goCover_649b36dcf066__59[7] = 1;if req.Tags != "" {goCover_649b36dcf066__59[16] = 1;
+		tags := strings.Split(req.Tags, ",")
+		for _, tag := range tags {goCover_649b36dcf066__59[17] = 1;
+			tag = strings.TrimSpace(tag)
+			if tag != "" {goCover_649b36dcf066__59[18] = 1;
+				query = query.Where("customers.tags ILIKE ?", "%"+tag+"%")
+			}
+		}
+	}
+
+	// 搜索条件
+	goCover_649b36dcf066__59[8] = 1;if req.Search != "" {goCover_649b36dcf066__59[19] = 1;
+		searchTerm := "%" + req.Search + "%"
+		query = query.Where("users.name ILIKE ? OR users.email ILIKE ? OR users.username ILIKE ? OR customers.company ILIKE ?",
+			searchTerm, searchTerm, searchTerm, searchTerm)
+	}
+
+	// 获取总数
+	goCover_649b36dcf066__59[9] = 1;var total int64
+	if err := query.Count(&total).Error; err != nil {goCover_649b36dcf066__59[20] = 1;
+		return nil, 0, fmt.Errorf("failed to count customers: %w", err)
+	}
+
+	// 排序
+	goCover_649b36dcf066__59[10] = 1;orderBy := fmt.Sprintf("users.%s %s", req.SortBy, req.SortOrder)
+	query = query.Order(orderBy)
+
+	// 分页
+	offset := (req.Page - 1) * req.PageSize
+	query = query.Offset(offset).Limit(req.PageSize)
+
+	// 获取数据
+	var customers []CustomerInfo
+	if err := query.Scan(&customers).Error; err != nil {goCover_649b36dcf066__59[21] = 1;
+		return nil, 0, fmt.Errorf("failed to list customers: %w", err)
+	}
+
+	goCover_649b36dcf066__59[11] = 1;return customers, total, nil
+}
+
+// GetCustomerActivity 获取客户活动记录
+func (s *CustomerService) GetCustomerActivity(ctx context.Context, customerID uint, limit int) (*CustomerActivity, error) {goCover_649b36dcf066__60[0] = 1 ; goCover_649b36dcf066__60[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__60[2] = 60 ; goCover_649b36dcf066__60[3] = 1;
+	activity := &CustomerActivity{
+		CustomerID: customerID,
+	}
+
+	// 获取最近的会话
+	s.db.Where("user_id = ?", customerID).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&activity.RecentSessions)
+
+	// 获取最近的工单
+	s.db.Where("customer_id = ?", customerID).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&activity.RecentTickets)
+
+	// 获取最近的消息
+	s.db.Joins("JOIN sessions ON messages.session_id = sessions.id").
+		Where("sessions.user_id = ?", customerID).
+		Order("messages.created_at DESC").
+		Limit(limit).
+		Find(&activity.RecentMessages)
+
+	return activity, nil
+}
+
+// AddCustomerNote 添加客户备注
+func (s *CustomerService) AddCustomerNote(ctx context.Context, customerID uint, note string, userID uint) error {goCover_649b36dcf066__61[0] = 8 ; goCover_649b36dcf066__61[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__61[2] = 61 ; goCover_649b36dcf066__61[3] = 1;
+	// 获取现有备注
+	var customer models.Customer
+	if err := s.db.Where("user_id = ?", customerID).First(&customer).Error; err != nil {goCover_649b36dcf066__61[7] = 1;
+		return fmt.Errorf("customer not found: %w", err)
+	}
+
+	// 添加新备注（时间戳 + 用户 + 内容）
+	goCover_649b36dcf066__61[4] = 1;timestamp := time.Now().Format("2006-01-02 15:04:05")
+	newNote := fmt.Sprintf("[%s] 用户%d: %s", timestamp, userID, note)
+
+	var updatedNotes string
+	if customer.Notes == "" {goCover_649b36dcf066__61[8] = 1;
+		updatedNotes = newNote
+	} else{ goCover_649b36dcf066__61[9] = 1;{
+		updatedNotes = customer.Notes + "\n" + newNote
+	}}
+
+	// 更新数据库
+	goCover_649b36dcf066__61[5] = 1;if err := s.db.Model(&models.Customer{}).
+		Where("user_id = ?", customerID).
+		Update("notes", updatedNotes).Error; err != nil {goCover_649b36dcf066__61[10] = 1;
+		return fmt.Errorf("failed to add note: %w", err)
+	}
+
+	goCover_649b36dcf066__61[6] = 1;s.logger.Infof("Added note to customer %d by user %d", customerID, userID)
+
+	return nil
+}
+
+// UpdateCustomerTags 更新客户标签
+func (s *CustomerService) UpdateCustomerTags(ctx context.Context, customerID uint, tags []string) error {goCover_649b36dcf066__62[0] = 3 ; goCover_649b36dcf066__62[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__62[2] = 62 ; goCover_649b36dcf066__62[3] = 1;
+	tagsStr := strings.Join(tags, ",")
+
+	if err := s.db.Model(&models.Customer{}).
+		Where("user_id = ?", customerID).
+		Update("tags", tagsStr).Error; err != nil {goCover_649b36dcf066__62[5] = 1;
+		return fmt.Errorf("failed to update tags: %w", err)
+	}
+
+	goCover_649b36dcf066__62[4] = 1;s.logger.Infof("Updated tags for customer %d: %s", customerID, tagsStr)
+
+	return nil
+}
+
+// GetCustomerStats 获取客户统计信息
+func (s *CustomerService) GetCustomerStats(ctx context.Context) (*CustomerStats, error) {goCover_649b36dcf066__63[0] = 1 ; goCover_649b36dcf066__63[1] = goCover_649b36dcf066_P ; goCover_649b36dcf066__63[2] = 63 ; goCover_649b36dcf066__63[3] = 1;
+	stats := &CustomerStats{}
+
+	// 总客户数
+	s.db.Model(&models.User{}).Where("role = ?", "customer").Count(&stats.Total)
+
+	// 活跃客户数（最近30天有活动）
+	thirtyDaysAgo := time.Now().AddDate(0, 0, -30)
+	s.db.Model(&models.User{}).
+		Where("role = ? AND last_login > ?", "customer", thirtyDaysAgo).
+		Count(&stats.Active)
+
+	// 新客户数（最近7天注册）
+	sevenDaysAgo := time.Now().AddDate(0, 0, -7)
+	s.db.Model(&models.User{}).
+		Where("role = ? AND created_at > ?", "customer", sevenDaysAgo).
+		Count(&stats.NewThisWeek)
+
+	// 按来源统计
+	s.db.Model(&models.Customer{}).
+		Select("source, COUNT(*) as count").
+		Group("source").
+		Scan(&stats.BySource)
+
+	// 按行业统计
+	s.db.Model(&models.Customer{}).
+		Select("industry, COUNT(*) as count").
+		Group("industry").
+		Having("industry != ''").
+		Scan(&stats.ByIndustry)
+
+	// 按优先级统计
+	s.db.Model(&models.Customer{}).
+		Select("priority, COUNT(*) as count").
+		Group("priority").
+		Scan(&stats.ByPriority)
+
+	return stats, nil
+}
+
+// CustomerInfo 客户信息（用于列表显示）
+type CustomerInfo struct {
+	models.User
+	Company  string `json:"company"`
+	Industry string `json:"industry"`
+	Source   string `json:"source"`
+	Tags     string `json:"tags"`
+	Notes    string `json:"notes"`
+	Priority string `json:"priority"`
+}
+
+// CustomerActivity 客户活动记录
+type CustomerActivity struct {
+	CustomerID     uint                `json:"customer_id"`
+	RecentSessions []models.Session    `json:"recent_sessions"`
+	RecentTickets  []models.Ticket     `json:"recent_tickets"`
+	RecentMessages []models.Message    `json:"recent_messages"`
+}
+
+// CustomerStats 客户统计信息
+type CustomerStats struct {
+	Total       int64                   `json:"total"`
+	Active      int64                   `json:"active"`
+	NewThisWeek int64                   `json:"new_this_week"`
+	BySource    []SourceCount           `json:"by_source"`
+	ByIndustry  []IndustryCount         `json:"by_industry"`
+	ByPriority  []PriorityCount         `json:"by_priority"`
+}
+
+type SourceCount struct {
+	Source string `json:"source"`
+	Count  int64  `json:"count"`
+}
+
+type IndustryCount struct {
+	Industry string `json:"industry"`
+	Count    int64  `json:"count"`
+}

@@ -13,6 +13,7 @@ echo "🧪 WeKnora 集成测试开始..."
 # 服务端点（可被环境变量覆盖）
 SERVIFY_URL=${SERVIFY_URL:-"http://localhost:8080"}
 WEKNORA_URL=${WEKNORA_URL:-"http://localhost:9000"}
+WEKNORA_ENABLED=${WEKNORA_ENABLED:-true}
 
 # 小工具：带重试的等待
 wait_for() {
@@ -34,8 +35,13 @@ echo "🔍 检查服务状态..."
 
 # 等待服务启动
 wait_for "Servify Health" "$SERVIFY_URL/health" 30 2
-if [ "${WEKNORA_ENABLED:-true}" = "true" ]; then
-  wait_for "WeKnora Health" "$WEKNORA_URL/api/v1/health" 30 2 || echo "⚠️ WeKnora 未就绪，后续将尝试降级"
+WEKNORA_AVAILABLE=false
+if [ "$WEKNORA_ENABLED" = "true" ]; then
+  if wait_for "WeKnora Health" "$WEKNORA_URL/api/v1/health" 30 2; then
+    WEKNORA_AVAILABLE=true
+  else
+    echo "⚠️ WeKnora 未就绪，将尝试降级模式继续"
+  fi
 fi
 
 # 1. 测试 Servify 健康检查
@@ -91,7 +97,8 @@ if echo "$AI_STATUS" | grep -q '"success":true'; then
 
     # 显示服务类型
     if command -v jq >/dev/null 2>&1; then
-      SERVICE_TYPE=$(echo "$AI_STATUS" | jq -r '.data.type')
+  # 优先读取 type；若缺失则根据 weknora_enabled 推断
+  SERVICE_TYPE=$(echo "$AI_STATUS" | jq -r '.data.type // ( .data.weknora_enabled == true and "enhanced" or "standard" )')
     else
       SERVICE_TYPE="unknown"
     fi
@@ -109,7 +116,7 @@ fi
 
 # 5. 测试 WeKnora 专用功能（如果是增强服务）
 if [ "$SERVICE_TYPE" = "enhanced" ]; then
-    echo "🔧 测试 WeKnora 专用功能..."
+  echo "🔧 测试 WeKnora 专用功能..."
 
     # 测试指标查询
     echo "  ✓ 测试服务指标..."
@@ -147,7 +154,10 @@ if [ "$SERVICE_TYPE" = "enhanced" ]; then
     if echo "$UPLOAD_RESPONSE" | grep -q '"success":true'; then
         echo "    ✅ 文档上传测试通过"
     else
-        echo "    ⚠️  文档上传测试失败（可能 WeKnora 不可用）: $UPLOAD_RESPONSE"
+        echo "    ⚠️  文档上传测试失败：$UPLOAD_RESPONSE"
+        if [ "$WEKNORA_AVAILABLE" != "true" ]; then
+          echo "       （提示：当前处于降级模式，WeKnora 不可用）"
+        fi
     fi
 fi
 

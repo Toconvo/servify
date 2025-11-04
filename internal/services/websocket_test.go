@@ -1,13 +1,14 @@
 package services
 
 import (
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"testing"
-	"time"
+    "encoding/json"
+    "fmt"
+    "net"
+    "net/http"
+    "net/http/httptest"
+    "strings"
+    "testing"
+    "time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -195,17 +196,21 @@ func TestWebSocketMessage_Serialization(t *testing.T) {
 
 // 测试WebSocket连接升级（集成测试）
 func TestWebSocketHub_HandleWebSocketUpgrade(t *testing.T) {
-	hub := NewWebSocketHub()
-	go hub.Run()
+    hub := NewWebSocketHub()
+    go hub.Run()
 
-	// 设置Gin路由
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	router.GET("/ws", hub.HandleWebSocket)
+    // 设置Gin路由
+    gin.SetMode(gin.TestMode)
+    router := gin.New()
+    router.GET("/ws", hub.HandleWebSocket)
 
-	// 创建测试服务器
-	server := httptest.NewServer(router)
-	defer server.Close()
+    // 创建测试服务器
+    // 某些受限环境不允许绑定本地端口，先做一次探测
+    if !canBindLocal() {
+        t.Skip("local TCP bind not permitted in this environment")
+    }
+    server := httptest.NewServer(router)
+    defer server.Close()
 
 	// 转换HTTP URL为WebSocket URL
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws?session_id=test-session"
@@ -236,6 +241,14 @@ func TestWebSocketHub_HandleWebSocketUpgrade(t *testing.T) {
 	// 验证客户端被注册
 	time.Sleep(100 * time.Millisecond)
 	assert.Equal(t, 1, hub.GetClientCount())
+}
+
+// canBindLocal 尝试绑定本地临时端口，判断运行环境是否允许本地监听
+func canBindLocal() bool {
+    ln, err := net.Listen("tcp", "127.0.0.1:0")
+    if err != nil { return false }
+    _ = ln.Close()
+    return true
 }
 
 func TestWebSocketClient_MessageHandling(t *testing.T) {

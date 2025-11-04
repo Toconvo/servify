@@ -1,0 +1,411 @@
+//line /Users/cui/Workspaces/servify/internal/handlers/agent_handler.go:1:1
+package handlers
+
+import (
+	"net/http"
+	"strconv"
+
+	"servify/internal/services"
+
+	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
+)
+
+// AgentHandler 客服管理处理器
+type AgentHandler struct {
+	agentService *services.AgentService
+	logger       *logrus.Logger
+}
+
+// NewAgentHandler 创建客服处理器
+func NewAgentHandler(agentService *services.AgentService, logger *logrus.Logger) *AgentHandler {goCover_c210a23060c3__0[0] = 1 ; goCover_c210a23060c3__0[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__0[2] = 0 ; goCover_c210a23060c3__0[3] = 1;
+	return &AgentHandler{
+		agentService: agentService,
+		logger:       logger,
+	}
+}
+
+// CreateAgent 创建客服
+// @Summary 创建客服
+// @Description 创建新的客服代理
+// @Tags 客服管理
+// @Accept json
+// @Produce json
+// @Param agent body services.AgentCreateRequest true "客服信息"
+// @Success 201 {object} models.Agent
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/agents [post]
+func (h *AgentHandler) CreateAgent(c *gin.Context) {goCover_c210a23060c3__1[0] = 5 ; goCover_c210a23060c3__1[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__1[2] = 1 ; goCover_c210a23060c3__1[3] = 1;
+	var req services.AgentCreateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {goCover_c210a23060c3__1[6] = 1;
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid request body",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	goCover_c210a23060c3__1[4] = 1;agent, err := h.agentService.CreateAgent(c.Request.Context(), &req)
+	if err != nil {goCover_c210a23060c3__1[7] = 1;
+		h.logger.Errorf("Failed to create agent: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Failed to create agent",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	goCover_c210a23060c3__1[5] = 1;c.JSON(http.StatusCreated, agent)
+}
+
+// GetAgent 获取客服详情
+// @Summary 获取客服详情
+// @Description 根据用户ID获取客服的详细信息
+// @Tags 客服管理
+// @Accept json
+// @Produce json
+// @Param id path int true "用户ID"
+// @Success 200 {object} models.Agent
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Router /api/agents/{id} [get]
+func (h *AgentHandler) GetAgent(c *gin.Context) {goCover_c210a23060c3__2[0] = 5 ; goCover_c210a23060c3__2[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__2[2] = 2 ; goCover_c210a23060c3__2[3] = 1;
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {goCover_c210a23060c3__2[6] = 1;
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid agent ID",
+			Message: "ID must be a valid number",
+		})
+		return
+	}
+
+	goCover_c210a23060c3__2[4] = 1;agent, err := h.agentService.GetAgentByUserID(c.Request.Context(), uint(id))
+	if err != nil {goCover_c210a23060c3__2[7] = 1;
+		h.logger.Errorf("Failed to get agent %d: %v", id, err)
+		c.JSON(http.StatusNotFound, ErrorResponse{
+			Error:   "Agent not found",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	goCover_c210a23060c3__2[5] = 1;c.JSON(http.StatusOK, agent)
+}
+
+// UpdateAgentStatus 更新客服状态
+// @Summary 更新客服状态
+// @Description 更新客服的在线状态
+// @Tags 客服管理
+// @Accept json
+// @Produce json
+// @Param id path int true "用户ID"
+// @Param status body map[string]string true "状态信息"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/agents/{id}/status [put]
+func (h *AgentHandler) UpdateAgentStatus(c *gin.Context) {goCover_c210a23060c3__3[0] = 7 ; goCover_c210a23060c3__3[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__3[2] = 3 ; goCover_c210a23060c3__3[3] = 1;
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {goCover_c210a23060c3__3[7] = 1;
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid agent ID",
+			Message: "ID must be a valid number",
+		})
+		return
+	}
+
+	goCover_c210a23060c3__3[4] = 1;var req struct {
+		Status string `json:"status" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {goCover_c210a23060c3__3[8] = 1;
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid request body",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	goCover_c210a23060c3__3[5] = 1;if err := h.agentService.UpdateAgentStatus(c.Request.Context(), uint(id), req.Status); err != nil {goCover_c210a23060c3__3[9] = 1;
+		h.logger.Errorf("Failed to update agent %d status: %v", id, err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Failed to update agent status",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	goCover_c210a23060c3__3[6] = 1;c.JSON(http.StatusOK, gin.H{
+		"message":  "Agent status updated successfully",
+		"agent_id": id,
+		"status":   req.Status,
+	})
+}
+
+// AgentGoOnline 客服上线
+// @Summary 客服上线
+// @Description 将客服状态设置为在线
+// @Tags 客服管理
+// @Accept json
+// @Produce json
+// @Param id path int true "用户ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/agents/{id}/online [post]
+func (h *AgentHandler) AgentGoOnline(c *gin.Context) {goCover_c210a23060c3__4[0] = 5 ; goCover_c210a23060c3__4[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__4[2] = 4 ; goCover_c210a23060c3__4[3] = 1;
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {goCover_c210a23060c3__4[6] = 1;
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid agent ID",
+			Message: "ID must be a valid number",
+		})
+		return
+	}
+
+	goCover_c210a23060c3__4[4] = 1;if err := h.agentService.AgentGoOnline(c.Request.Context(), uint(id)); err != nil {goCover_c210a23060c3__4[7] = 1;
+		h.logger.Errorf("Failed to set agent %d online: %v", id, err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Failed to set agent online",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	goCover_c210a23060c3__4[5] = 1;c.JSON(http.StatusOK, gin.H{
+		"message":  "Agent is now online",
+		"agent_id": id,
+	})
+}
+
+// AgentGoOffline 客服下线
+// @Summary 客服下线
+// @Description 将客服状态设置为离线
+// @Tags 客服管理
+// @Accept json
+// @Produce json
+// @Param id path int true "用户ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/agents/{id}/offline [post]
+func (h *AgentHandler) AgentGoOffline(c *gin.Context) {goCover_c210a23060c3__5[0] = 5 ; goCover_c210a23060c3__5[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__5[2] = 5 ; goCover_c210a23060c3__5[3] = 1;
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {goCover_c210a23060c3__5[6] = 1;
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid agent ID",
+			Message: "ID must be a valid number",
+		})
+		return
+	}
+
+	goCover_c210a23060c3__5[4] = 1;if err := h.agentService.AgentGoOffline(c.Request.Context(), uint(id)); err != nil {goCover_c210a23060c3__5[7] = 1;
+		h.logger.Errorf("Failed to set agent %d offline: %v", id, err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Failed to set agent offline",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	goCover_c210a23060c3__5[5] = 1;c.JSON(http.StatusOK, gin.H{
+		"message":  "Agent is now offline",
+		"agent_id": id,
+	})
+}
+
+// GetOnlineAgents 获取在线客服列表
+// @Summary 获取在线客服列表
+// @Description 获取当前在线的所有客服
+// @Tags 客服管理
+// @Accept json
+// @Produce json
+// @Success 200 {array} services.AgentInfo
+// @Failure 500 {object} ErrorResponse
+// @Router /api/agents/online [get]
+func (h *AgentHandler) GetOnlineAgents(c *gin.Context) {goCover_c210a23060c3__6[0] = 1 ; goCover_c210a23060c3__6[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__6[2] = 6 ; goCover_c210a23060c3__6[3] = 1;
+	agents := h.agentService.GetOnlineAgents(c.Request.Context())
+	c.JSON(http.StatusOK, agents)
+}
+
+// AssignSession 分配会话给客服
+// @Summary 分配会话给客服
+// @Description 将会话分配给指定的客服
+// @Tags 客服管理
+// @Accept json
+// @Produce json
+// @Param id path int true "客服用户ID"
+// @Param assignment body map[string]string true "分配信息"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/agents/{id}/assign-session [post]
+func (h *AgentHandler) AssignSession(c *gin.Context) {goCover_c210a23060c3__7[0] = 7 ; goCover_c210a23060c3__7[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__7[2] = 7 ; goCover_c210a23060c3__7[3] = 1;
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {goCover_c210a23060c3__7[7] = 1;
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid agent ID",
+			Message: "ID must be a valid number",
+		})
+		return
+	}
+
+	goCover_c210a23060c3__7[4] = 1;var req struct {
+		SessionID string `json:"session_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {goCover_c210a23060c3__7[8] = 1;
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid request body",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	goCover_c210a23060c3__7[5] = 1;if err := h.agentService.AssignSessionToAgent(c.Request.Context(), req.SessionID, uint(id)); err != nil {goCover_c210a23060c3__7[9] = 1;
+		h.logger.Errorf("Failed to assign session %s to agent %d: %v", req.SessionID, id, err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Failed to assign session",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	goCover_c210a23060c3__7[6] = 1;c.JSON(http.StatusOK, gin.H{
+		"message":    "Session assigned successfully",
+		"agent_id":   id,
+		"session_id": req.SessionID,
+	})
+}
+
+// ReleaseSession 释放客服的会话
+// @Summary 释放客服的会话
+// @Description 从客服释放指定的会话
+// @Tags 客服管理
+// @Accept json
+// @Produce json
+// @Param id path int true "客服用户ID"
+// @Param release body map[string]string true "释放信息"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/agents/{id}/release-session [post]
+func (h *AgentHandler) ReleaseSession(c *gin.Context) {goCover_c210a23060c3__8[0] = 7 ; goCover_c210a23060c3__8[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__8[2] = 8 ; goCover_c210a23060c3__8[3] = 1;
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {goCover_c210a23060c3__8[7] = 1;
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid agent ID",
+			Message: "ID must be a valid number",
+		})
+		return
+	}
+
+	goCover_c210a23060c3__8[4] = 1;var req struct {
+		SessionID string `json:"session_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {goCover_c210a23060c3__8[8] = 1;
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid request body",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	goCover_c210a23060c3__8[5] = 1;if err := h.agentService.ReleaseSessionFromAgent(c.Request.Context(), req.SessionID, uint(id)); err != nil {goCover_c210a23060c3__8[9] = 1;
+		h.logger.Errorf("Failed to release session %s from agent %d: %v", req.SessionID, id, err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Failed to release session",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	goCover_c210a23060c3__8[6] = 1;c.JSON(http.StatusOK, gin.H{
+		"message":    "Session released successfully",
+		"agent_id":   id,
+		"session_id": req.SessionID,
+	})
+}
+
+// GetAgentStats 获取客服统计
+// @Summary 获取客服统计
+// @Description 获取客服相关的统计数据
+// @Tags 客服管理
+// @Accept json
+// @Produce json
+// @Param agent_id query int false "特定客服ID，用于获取单个客服的统计"
+// @Success 200 {object} services.AgentStats
+// @Failure 500 {object} ErrorResponse
+// @Router /api/agents/stats [get]
+func (h *AgentHandler) GetAgentStats(c *gin.Context) {goCover_c210a23060c3__9[0] = 6 ; goCover_c210a23060c3__9[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__9[2] = 9 ; goCover_c210a23060c3__9[3] = 1;
+	var agentID *uint
+	if agentIDStr := c.Query("agent_id"); agentIDStr != "" {goCover_c210a23060c3__9[6] = 1;
+		if id, err := strconv.ParseUint(agentIDStr, 10, 32); err == nil {goCover_c210a23060c3__9[7] = 1;
+			agentIDValue := uint(id)
+			agentID = &agentIDValue
+		}
+	}
+
+	goCover_c210a23060c3__9[4] = 1;stats, err := h.agentService.GetAgentStats(c.Request.Context(), agentID)
+	if err != nil {goCover_c210a23060c3__9[8] = 1;
+		h.logger.Errorf("Failed to get agent stats: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Failed to get agent statistics",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	goCover_c210a23060c3__9[5] = 1;c.JSON(http.StatusOK, stats)
+}
+
+// FindAvailableAgent 查找可用客服
+// @Summary 查找可用客服
+// @Description 根据技能和优先级查找可用的客服
+// @Tags 客服管理
+// @Accept json
+// @Produce json
+// @Param skills query []string false "所需技能"
+// @Param priority query string false "优先级"
+// @Success 200 {object} services.AgentInfo
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/agents/find-available [get]
+func (h *AgentHandler) FindAvailableAgent(c *gin.Context) {goCover_c210a23060c3__10[0] = 3 ; goCover_c210a23060c3__10[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__10[2] = 10 ; goCover_c210a23060c3__10[3] = 1;
+	skills := c.QueryArray("skills")
+	priority := c.DefaultQuery("priority", "normal")
+
+	agent, err := h.agentService.FindAvailableAgent(c.Request.Context(), skills, priority)
+	if err != nil {goCover_c210a23060c3__10[5] = 1;
+		h.logger.Errorf("Failed to find available agent: %v", err)
+		c.JSON(http.StatusNotFound, ErrorResponse{
+			Error:   "No available agent found",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	goCover_c210a23060c3__10[4] = 1;c.JSON(http.StatusOK, agent)
+}
+
+// RegisterAgentRoutes 注册客服管理相关路由
+func RegisterAgentRoutes(r *gin.RouterGroup, handler *AgentHandler) {goCover_c210a23060c3__11[0] = 2 ; goCover_c210a23060c3__11[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__11[2] = 11 ; goCover_c210a23060c3__11[3] = 1;
+	agents := r.Group("/agents")
+	{goCover_c210a23060c3__11[4] = 1;
+		agents.POST("", handler.CreateAgent)
+		agents.GET("/online", handler.GetOnlineAgents)
+		agents.GET("/stats", handler.GetAgentStats)
+		agents.GET("/find-available", handler.FindAvailableAgent)
+		agents.GET("/:id", handler.GetAgent)
+		agents.PUT("/:id/status", handler.UpdateAgentStatus)
+		agents.POST("/:id/online", handler.AgentGoOnline)
+		agents.POST("/:id/offline", handler.AgentGoOffline)
+		agents.POST("/:id/assign-session", handler.AssignSession)
+		agents.POST("/:id/release-session", handler.ReleaseSession)
+	}
+}

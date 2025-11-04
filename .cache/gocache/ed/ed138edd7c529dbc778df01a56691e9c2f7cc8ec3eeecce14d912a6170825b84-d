@@ -1,0 +1,55 @@
+=== RUN   TestEnhancedAI_FallbackFlow_NoWeKnora
+time="2025-10-27T23:38:04+08:00" level=info msg="Knowledge base initialized with default documents"
+time="2025-10-27T23:38:04+08:00" level=info msg="Using fallback knowledge base"
+--- PASS: TestEnhancedAI_FallbackFlow_NoWeKnora (0.00s)
+=== RUN   TestKnowledgeBase_Search_Basic
+--- PASS: TestKnowledgeBase_Search_Basic (0.00s)
+=== RUN   TestAIService_ShouldTransfer_Complaint
+--- PASS: TestAIService_ShouldTransfer_Complaint (0.00s)
+=== RUN   TestAIService_InitializeKnowledgeBase_AddsDocs
+time="2025-10-27T23:38:04+08:00" level=info msg="Knowledge base initialized with default documents"
+--- PASS: TestAIService_InitializeKnowledgeBase_AddsDocs (0.00s)
+=== RUN   TestAIService_ProcessQuery_Fallback_NoAPIKey
+time="2025-10-27T23:38:04+08:00" level=info msg="Knowledge base initialized with default documents"
+--- PASS: TestAIService_ProcessQuery_Fallback_NoAPIKey (0.00s)
+=== RUN   TestAIService_ShouldTransferToHuman
+--- PASS: TestAIService_ShouldTransferToHuman (0.00s)
+=== RUN   TestAIService_GetSessionSummary_NoAPIKey
+--- PASS: TestAIService_GetSessionSummary_NoAPIKey (0.00s)
+=== RUN   TestMessageRouter_HandleWebMessage_PushesAIResponse
+time="2025-10-27T23:38:04+08:00" level=info msg="Client c1 connected"
+--- PASS: TestMessageRouter_HandleWebMessage_PushesAIResponse (0.01s)
+=== RUN   TestWebRTCService_NoConnectionErrors
+--- PASS: TestWebRTCService_NoConnectionErrors (0.00s)
+=== RUN   TestWebSocketHub_ClientManagement
+time="2025-10-27T23:38:04+08:00" level=info msg="Client client-1 connected"
+time="2025-10-27T23:38:04+08:00" level=info msg="Client client-2 connected"
+time="2025-10-27T23:38:04+08:00" level=info msg="Client client-1 disconnected"
+time="2025-10-27T23:38:04+08:00" level=info msg="Client client-2 disconnected"
+--- PASS: TestWebSocketHub_ClientManagement (0.30s)
+=== RUN   TestWebSocketHub_MessageBroadcast
+time="2025-10-27T23:38:04+08:00" level=info msg="Client client-1 connected"
+time="2025-10-27T23:38:04+08:00" level=info msg="Client client-2 connected"
+time="2025-10-27T23:38:04+08:00" level=info msg="Client client-3 connected"
+time="2025-10-27T23:38:04+08:00" level=info msg="Client client-1 disconnected"
+time="2025-10-27T23:38:04+08:00" level=info msg="Client client-2 disconnected"
+--- PASS: TestWebSocketHub_MessageBroadcast (0.30s)
+=== RUN   TestWebSocketHub_SendToSession
+time="2025-10-27T23:38:04+08:00" level=info msg="Client client-3 disconnected"
+time="2025-10-27T23:38:04+08:00" level=info msg="Client client-1 connected"
+--- PASS: TestWebSocketHub_SendToSession (0.20s)
+=== RUN   TestWebSocketMessage_Serialization
+time="2025-10-27T23:38:04+08:00" level=info msg="Client client-1 disconnected"
+--- PASS: TestWebSocketMessage_Serialization (0.00s)
+=== RUN   TestWebSocketHub_HandleWebSocketUpgrade
+    websocket_test.go:210: local TCP bind not permitted in this environment
+--- SKIP: TestWebSocketHub_HandleWebSocketUpgrade (0.00s)
+=== RUN   TestWebSocketClient_MessageHandling
+time="2025-10-27T23:38:04+08:00" level=info msg="Client test-client connected"
+time="2025-10-27T23:38:04+08:00" level=info msg="Text message persisted" client_id=test-client session_id=test-session timestamp="2025-10-27 23:38:04.927569 +0800 CST m=+0.835603223" type=text-message
+time="2025-10-27T23:38:04+08:00" level=info msg="Received WebRTC offer from session test-session"
+time="2025-10-27T23:38:04+08:00" level=info msg="Client test-client disconnected"
+--- PASS: TestWebSocketClient_MessageHandling (0.02s)
+PASS
+coverage: 12.3% of statements
+ok  	servify/internal/services	0.904s	coverage: 12.3% of statements

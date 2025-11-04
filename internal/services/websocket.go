@@ -12,6 +12,8 @@ import (
     "github.com/gin-gonic/gin"
     "github.com/gorilla/websocket"
     "github.com/sirupsen/logrus"
+    "gorm.io/gorm"
+    "servify/internal/models"
 )
 
 type WebSocketMessage struct {
@@ -37,6 +39,8 @@ type WebSocketHub struct {
     mutex      sync.RWMutex
     // 可选：用于直接在WS层调用AI服务（未设置时则仅广播）
     aiService  AIServiceInterface
+    // 可选：用于将文本消息落库（如未设置则仅记录日志）
+    db         *gorm.DB
 }
 
 var upgrader = websocket.Upgrader{
@@ -59,6 +63,13 @@ func (h *WebSocketHub) SetAIService(ai AIServiceInterface) {
     h.mutex.Lock()
     defer h.mutex.Unlock()
     h.aiService = ai
+}
+
+// SetDB 为 WebSocketHub 注入可选的数据库实例，用于持久化消息
+func (h *WebSocketHub) SetDB(db *gorm.DB) {
+    h.mutex.Lock()
+    defer h.mutex.Unlock()
+    h.db = db
 }
 
 func (h *WebSocketHub) Run() {
@@ -270,18 +281,71 @@ func (h *WebSocketHub) GetClientCount() int {
 
 // persistTextMessage 持久化文本消息
 func (c *WebSocketClient) persistTextMessage(message WebSocketMessage) error {
-	// 当前简单实现：记录到日志
-	// 生产环境中应该保存到数据库中的 messages 表
-	logrus.WithFields(logrus.Fields{
-		"session_id": c.SessionID,
-		"client_id":  c.ID,
-		"type":       message.Type,
-		"timestamp":  message.Timestamp,
-	}).Info("Text message persisted")
+    // 当前简单实现：记录到日志
+    // 生产环境中应该保存到数据库中的 messages 表
+    logrus.WithFields(logrus.Fields{
+        "session_id": c.SessionID,
+        "client_id":  c.ID,
+        "type":       message.Type,
+        "timestamp":  message.Timestamp,
+    }).Info("Text message persisted")
 
-	// TODO: 实现实际的数据库保存逻辑
-	// 可以使用项目中的 Message 模型来保存
-	return nil
+    // 若未配置数据库，则直接返回
+    hub := c.Hub
+    hub.mutex.RLock()
+    db := hub.db
+    hub.mutex.RUnlock()
+    if db == nil {
+        return nil
+    }
+
+    // 确保会话存在（以 SessionID 作为主键），若不存在则创建
+    var sess models.Session
+    if err := db.First(&sess, "id = ?", c.SessionID).Error; err != nil {
+        if err == gorm.ErrRecordNotFound {
+            now := time.Now()
+            sess = models.Session{
+                ID:        c.SessionID,
+                Status:    "active",
+                Platform:  "web",
+                StartedAt: now,
+                CreatedAt: now,
+                UpdatedAt: now,
+            }
+            if err := db.Create(&sess).Error; err != nil {
+                return fmt.Errorf("create session: %w", err)
+            }
+        } else {
+            return err
+        }
+    }
+
+    // 提取文本内容
+    var content string
+    switch v := message.Data.(type) {
+    case map[string]interface{}:
+        if s, ok := v["content"].(string); ok {
+            content = s
+        }
+    case string:
+        content = v
+    default:
+        // 其他格式不处理
+    }
+
+    // 插入消息记录
+    m := &models.Message{
+        SessionID: c.SessionID,
+        UserID:    0,
+        Content:   content,
+        Type:      "text",
+        Sender:    "user",
+        CreatedAt: time.Now(),
+    }
+    if err := db.Create(m).Error; err != nil {
+        return fmt.Errorf("persist message: %w", err)
+    }
+    return nil
 }
 
 // processMessageWithAI 使用 AI 处理消息

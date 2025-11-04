@@ -70,6 +70,7 @@ func run(cmd *cobra.Command, args []string) {
 
     // 初始化基础服务
     wsHub := services.NewWebSocketHub()
+    if db != nil { wsHub.SetDB(db) }
     webrtcService := services.NewWebRTCService(cfg.WebRTC.STUNServer, wsHub)
 
 	// 初始化 WeKnora 客户端
@@ -140,9 +141,12 @@ func run(cmd *cobra.Command, args []string) {
     // 初始化消息路由
     messageRouter := services.NewMessageRouter(aiService, wsHub, db)
 
-	// 启动后台服务
-	logrus.Info("🔌 Starting background services...")
-	go wsHub.Run()
+    // 启动后台服务
+    logrus.Info("🔌 Starting background services...")
+    go wsHub.Run()
+
+    // 将 AI 服务注入 WebSocketHub 以便直接处理文本消息
+    wsHub.SetAIService(aiService)
 
 	// 启动消息路由
 	if err := messageRouter.Start(); err != nil {
@@ -214,11 +218,11 @@ func run(cmd *cobra.Command, args []string) {
 }
 
 func setupEnhancedRouter(
-	cfg *config.Config,
-	wsHub *services.WebSocketHub,
-	webrtcService *services.WebRTCService,
-	messageRouter *services.MessageRouter,
-	aiService services.AIServiceInterface,
+    cfg *config.Config,
+    wsHub *services.WebSocketHub,
+    webrtcService *services.WebRTCService,
+    messageRouter *services.MessageRouter,
+    aiService services.AIServiceInterface,
 ) *gin.Engine {
 	router := gin.New()
 
@@ -246,14 +250,14 @@ func setupEnhancedRouter(
 	router.GET("/health", healthHandler.Health)
 	router.GET("/ready", healthHandler.Ready)
 
-	// 监控端点
+    // 监控端点
     if cfg.Monitoring.Enabled {
         router.GET(cfg.Monitoring.MetricsPath, handlers.NewMetricsHandler(wsHub, webrtcService, aiService, messageRouter).GetMetrics)
     }
 
-	// API 路由组
-	api := router.Group("/api/v1")
-	{
+    // API 路由组
+    api := router.Group("/api/v1")
+    {
 		// WebSocket 连接
 		wsHandler := handlers.NewWebSocketHandler(wsHub)
 		api.GET("/ws", wsHandler.HandleWebSocket)
@@ -268,13 +272,13 @@ func setupEnhancedRouter(
 		messageHandler := handlers.NewMessageHandler(messageRouter)
 		api.GET("/messages/platforms", messageHandler.GetPlatformStats)
 
-		// AI 相关 API
-		aiHandler := handlers.NewAIHandler(aiService)
-		aiAPI := api.Group("/ai")
-		{
-			aiAPI.POST("/query", aiHandler.ProcessQuery)
-			aiAPI.GET("/status", aiHandler.GetStatus)
-			aiAPI.GET("/metrics", aiHandler.GetMetrics)
+        // AI 相关 API
+        aiHandler := handlers.NewAIHandler(aiService)
+        aiAPI := api.Group("/ai")
+        {
+            aiAPI.POST("/query", aiHandler.ProcessQuery)
+            aiAPI.GET("/status", aiHandler.GetStatus)
+            aiAPI.GET("/metrics", aiHandler.GetMetrics)
 
 			// WeKnora 特定功能
 			if cfg.WeKnora.Enabled {
@@ -283,16 +287,20 @@ func setupEnhancedRouter(
 				aiAPI.PUT("/weknora/enable", aiHandler.EnableWeKnora)
 				aiAPI.PUT("/weknora/disable", aiHandler.DisableWeKnora)
 				aiAPI.POST("/circuit-breaker/reset", aiHandler.ResetCircuitBreaker)
-			}
-		}
-	}
+            }
+        }
 
-	// 文件上传 API（如果启用）
-	if cfg.Upload.Enabled {
-		uploadHandler := handlers.NewUploadHandler(cfg, aiService)
-		api.POST("/upload", uploadHandler.UploadFile)
-		api.GET("/upload/status/:id", uploadHandler.GetUploadStatus)
-	}
+        // 轻量指标上报（客户端/前端）
+        ingest := handlers.NewMetricsIngestHandler(handlers.NewMetricsAggregator())
+        api.POST("/metrics/ingest", ingest.Ingest)
+
+        // 文件上传 API（如果启用）必须放在相同作用域下，复用 api 组
+        if cfg.Upload.Enabled {
+            uploadHandler := handlers.NewUploadHandler(cfg, aiService)
+            api.POST("/upload", uploadHandler.UploadFile)
+            api.GET("/upload/status/:id", uploadHandler.GetUploadStatus)
+        }
+    }
 
 	// 静态文件服务
 	router.Static("/static", "./static")

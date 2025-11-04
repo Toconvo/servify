@@ -1,0 +1,121 @@
+//line /Users/cui/Workspaces/servify/internal/handlers/handlers.go:1:1
+package handlers
+
+import (
+	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
+	"net/http"
+	"servify/internal/services"
+)
+
+type WebSocketHandler struct {
+	wsHub *services.WebSocketHub
+}
+
+func NewWebSocketHandler(wsHub *services.WebSocketHub) *WebSocketHandler {goCover_c210a23060c3__39[0] = 1 ; goCover_c210a23060c3__39[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__39[2] = 39 ; goCover_c210a23060c3__39[3] = 1;
+	return &WebSocketHandler{
+		wsHub: wsHub,
+	}
+}
+
+func (h *WebSocketHandler) HandleWebSocket(c *gin.Context) {goCover_c210a23060c3__40[0] = 1 ; goCover_c210a23060c3__40[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__40[2] = 40 ; goCover_c210a23060c3__40[3] = 1;
+	h.wsHub.HandleWebSocket(c)
+}
+
+func (h *WebSocketHandler) GetStats(c *gin.Context) {goCover_c210a23060c3__41[0] = 1 ; goCover_c210a23060c3__41[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__41[2] = 41 ; goCover_c210a23060c3__41[3] = 1;
+	stats := map[string]interface{}{
+		"connected_clients": h.wsHub.GetClientCount(),
+		"status":            "running",
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    stats,
+	})
+}
+
+type WebRTCHandler struct {
+	webrtcService *services.WebRTCService
+}
+
+func NewWebRTCHandler(webrtcService *services.WebRTCService) *WebRTCHandler {goCover_c210a23060c3__42[0] = 1 ; goCover_c210a23060c3__42[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__42[2] = 42 ; goCover_c210a23060c3__42[3] = 1;
+	return &WebRTCHandler{
+		webrtcService: webrtcService,
+	}
+}
+
+func (h *WebRTCHandler) GetStats(c *gin.Context) {goCover_c210a23060c3__43[0] = 5 ; goCover_c210a23060c3__43[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__43[2] = 43 ; goCover_c210a23060c3__43[3] = 1;
+	sessionID := c.Query("session_id")
+	if sessionID == "" {goCover_c210a23060c3__43[6] = 1;
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "session_id is required",
+		})
+		return
+	}
+
+	goCover_c210a23060c3__43[4] = 1;stats, err := h.webrtcService.GetConnectionStats(sessionID)
+	if err != nil {goCover_c210a23060c3__43[7] = 1;
+		logrus.Errorf("Failed to get WebRTC stats: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "Failed to get connection stats",
+		})
+		return
+	}
+
+	goCover_c210a23060c3__43[5] = 1;c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    stats,
+	})
+}
+
+func (h *WebRTCHandler) GetConnections(c *gin.Context) {goCover_c210a23060c3__44[0] = 1 ; goCover_c210a23060c3__44[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__44[2] = 44 ; goCover_c210a23060c3__44[3] = 1;
+	count := h.webrtcService.GetConnectionCount()
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": map[string]interface{}{
+			"connection_count": count,
+		},
+	})
+}
+
+type MessageHandler struct {
+	messageRouter *services.MessageRouter
+}
+
+func NewMessageHandler(messageRouter *services.MessageRouter) *MessageHandler {goCover_c210a23060c3__45[0] = 1 ; goCover_c210a23060c3__45[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__45[2] = 45 ; goCover_c210a23060c3__45[3] = 1;
+	return &MessageHandler{
+		messageRouter: messageRouter,
+	}
+}
+
+func (h *MessageHandler) GetPlatformStats(c *gin.Context) {goCover_c210a23060c3__46[0] = 1 ; goCover_c210a23060c3__46[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__46[2] = 46 ; goCover_c210a23060c3__46[3] = 1;
+	stats := h.messageRouter.GetPlatformStats()
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    stats,
+	})
+}
+
+type HealthHandler struct{}
+
+func NewHealthHandler() *HealthHandler {goCover_c210a23060c3__47[0] = 1 ; goCover_c210a23060c3__47[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__47[2] = 47 ; goCover_c210a23060c3__47[3] = 1;
+	return &HealthHandler{}
+}
+
+func (h *HealthHandler) Health(c *gin.Context) {goCover_c210a23060c3__48[0] = 1 ; goCover_c210a23060c3__48[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__48[2] = 48 ; goCover_c210a23060c3__48[3] = 1;
+	c.JSON(http.StatusOK, gin.H{
+		"status":    "healthy",
+		"timestamp": c.GetHeader("X-Request-Time"),
+		"version":   "1.0.0",
+	})
+}
+
+func (h *HealthHandler) Ready(c *gin.Context) {goCover_c210a23060c3__49[0] = 1 ; goCover_c210a23060c3__49[1] = goCover_c210a23060c3_P ; goCover_c210a23060c3__49[2] = 49 ; goCover_c210a23060c3__49[3] = 1;
+	c.JSON(http.StatusOK, gin.H{
+		"status": "ready",
+	})
+}

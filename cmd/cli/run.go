@@ -68,6 +68,7 @@ func run(cmd *cobra.Command, args []string) {
 
     // 初始化服务
     wsHub := services.NewWebSocketHub()
+    if db != nil { wsHub.SetDB(db) }
     webrtcService := services.NewWebRTCService(cfg.WebRTC.STUNServer, wsHub)
     // 使用新的配置结构（cfg.AI.OpenAI.*）
     aiService := services.NewAIService(cfg.AI.OpenAI.APIKey, cfg.AI.OpenAI.BaseURL)
@@ -149,9 +150,9 @@ func setupRouter(wsHub *services.WebSocketHub, webrtcService *services.WebRTCSer
 	router.GET("/health", healthHandler.Health)
 	router.GET("/ready", healthHandler.Ready)
 
-	// API 路由组
-	api := router.Group("/api/v1")
-	{
+    // API 路由组
+    api := router.Group("/api/v1")
+    {
 		// WebSocket 连接
 		wsHandler := handlers.NewWebSocketHandler(wsHub)
 		api.GET("/ws", wsHandler.HandleWebSocket)
@@ -162,10 +163,14 @@ func setupRouter(wsHub *services.WebSocketHub, webrtcService *services.WebRTCSer
 		api.GET("/webrtc/stats", webrtcHandler.GetStats)
 		api.GET("/webrtc/connections", webrtcHandler.GetConnections)
 
-		// 消息路由
-		messageHandler := handlers.NewMessageHandler(messageRouter)
-		api.GET("/messages/platforms", messageHandler.GetPlatformStats)
-	}
+        // 消息路由
+        messageHandler := handlers.NewMessageHandler(messageRouter)
+        api.GET("/messages/platforms", messageHandler.GetPlatformStats)
+
+        // 轻量指标上报（可选）
+        ingest := handlers.NewMetricsIngestHandler(handlers.NewMetricsAggregator())
+        api.POST("/metrics/ingest", ingest.Ingest)
+    }
 
 	// 静态文件服务
 	router.Static("/static", "./static")

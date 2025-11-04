@@ -310,20 +310,26 @@ func (s *EnhancedAIService) GetMetrics() *AIMetrics {
 
 // GetStatus 获取服务状态
 func (s *EnhancedAIService) GetStatus(ctx context.Context) map[string]interface{} {
-	status := map[string]interface{}{
-		"weknora_enabled":  s.weKnoraEnabled,
-		"fallback_enabled": s.fallbackEnabled,
-		"metrics":          s.metrics,
-	}
+    status := map[string]interface{}{
+        "type":            "enhanced",
+        "weknora_enabled":  s.weKnoraEnabled,
+        "fallback_enabled": s.fallbackEnabled,
+        "metrics":          s.metrics,
+    }
 
-	// 检查 WeKnora 健康状态
-	if s.weKnoraEnabled {
-		err := s.weKnoraClient.HealthCheck(ctx)
-		status["weknora_healthy"] = err == nil
-		if err != nil {
-			status["weknora_error"] = err.Error()
-		}
-	}
+    // 检查 WeKnora 健康状态
+    if s.weKnoraEnabled {
+        if s.weKnoraClient != nil {
+            err := s.weKnoraClient.HealthCheck(ctx)
+            status["weknora_healthy"] = err == nil
+            if err != nil {
+                status["weknora_error"] = err.Error()
+            }
+        } else {
+            status["weknora_healthy"] = false
+            status["weknora_error"] = "weknora client not initialized"
+        }
+    }
 
 	// 熔断器状态
 	status["circuit_breaker"] = map[string]interface{}{
