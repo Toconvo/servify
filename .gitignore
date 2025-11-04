@@ -32,3 +32,7 @@ coverage.out
 
 # 测试输出
 scripts/test-results/
+
+# 缓存文件
+.cache/
+bin/
