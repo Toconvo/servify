@@ -5,6 +5,7 @@
   <title>Servify 管理后台</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="/admin/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
 </head>
 <body>
   <header>
@@ -14,6 +15,8 @@
       <button data-tab="tickets">工单</button>
       <button data-tab="customers">客户</button>
       <button data-tab="agents">客服</button>
+      <button data-tab="satisfaction">满意度评价</button>
+      <button data-tab="sla">SLA 管理</button>
       <button data-tab="ai">AI 状态</button>
     </nav>
   </header>
@@ -33,9 +36,37 @@
           <h3>在线客服</h3>
           <div id="stat_agents_online">-</div>
         </div>
+        <div class="card">
+          <h3>客户满意度</h3>
+          <div id="stat_satisfaction_avg">-</div>
+        </div>
       </div>
+
+      <!-- 图表区域 -->
+      <div class="chart-container">
+        <div class="chart-panel">
+          <h3>工单处理趋势</h3>
+          <div id="ticket-trend-chart" style="width: 100%; height: 300px;"></div>
+        </div>
+        <div class="chart-panel">
+          <h3>满意度评分分布</h3>
+          <div id="satisfaction-distribution-chart" style="width: 100%; height: 300px;"></div>
+        </div>
+      </div>
+
+      <div class="chart-container">
+        <div class="chart-panel">
+          <h3>客服工作负载</h3>
+          <div id="agent-workload-chart" style="width: 100%; height: 300px;"></div>
+        </div>
+        <div class="chart-panel">
+          <h3>平台接入情况</h3>
+          <div id="platform-stats-chart" style="width: 100%; height: 300px;"></div>
+        </div>
+      </div>
+
       <div class="panel">
-        <h3>平台接入</h3>
+        <h3>平台接入详情</h3>
         <pre id="platforms_json" class="json"></pre>
       </div>
     </section>
@@ -46,6 +77,19 @@
           <h3>工单列表</h3>
           <button id="btn_new_ticket">新建工单</button>
         </div>
+
+        <!-- 工单统计图表 -->
+        <div class="chart-container" style="margin-bottom: 20px;">
+          <div class="chart-panel">
+            <h3>工单状态分布</h3>
+            <div id="ticket-status-chart" style="width: 100%; height: 250px;"></div>
+          </div>
+          <div class="chart-panel">
+            <h3>工单优先级分布</h3>
+            <div id="ticket-priority-chart" style="width: 100%; height: 250px;"></div>
+          </div>
+        </div>
+
         <table id="tbl_tickets">
           <thead>
             <tr><th>ID</th><th>标题</th><th>状态</th><th>优先级</th><th>客户</th><th>操作</th></tr>
@@ -102,6 +146,259 @@
           </thead>
           <tbody></tbody>
         </table>
+      </div>
+    </section>
+
+    <section id="satisfaction" class="tab">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>满意度评价管理</h3>
+          <div class="controls">
+            <select id="satisfaction_filter_rating">
+              <option value="">所有评分</option>
+              <option value="5">5星</option>
+              <option value="4">4星</option>
+              <option value="3">3星</option>
+              <option value="2">2星</option>
+              <option value="1">1星</option>
+            </select>
+            <input type="date" id="satisfaction_filter_date_from" placeholder="开始日期">
+            <input type="date" id="satisfaction_filter_date_to" placeholder="结束日期">
+            <button id="btn_satisfaction_filter">筛选</button>
+            <button id="btn_satisfaction_stats">统计报告</button>
+          </div>
+        </div>
+
+        <!-- 满意度统计卡片 -->
+        <div class="stats-cards">
+          <div class="stat-card">
+            <h4>总评价数</h4>
+            <div id="satisfaction_total_count">-</div>
+          </div>
+          <div class="stat-card">
+            <h4>平均评分</h4>
+            <div id="satisfaction_avg_rating">-</div>
+          </div>
+          <div class="stat-card">
+            <h4>5星占比</h4>
+            <div id="satisfaction_five_star_rate">-</div>
+          </div>
+          <div class="stat-card">
+            <h4>低评分工单</h4>
+            <div id="satisfaction_low_rating_count">-</div>
+          </div>
+        </div>
+
+        <!-- 满意度图表区域 -->
+        <div class="chart-container">
+          <div class="chart-panel">
+            <h3>评分分布</h3>
+            <div id="satisfaction-rating-pie-chart" style="width: 100%; height: 300px;"></div>
+          </div>
+          <div class="chart-panel">
+            <h3>满意度趋势</h3>
+            <div id="satisfaction-trend-chart" style="width: 100%; height: 300px;"></div>
+          </div>
+        </div>
+
+        <div class="chart-container">
+          <div class="chart-panel">
+            <h3>按分类统计</h3>
+            <div id="satisfaction-category-chart" style="width: 100%; height: 300px;"></div>
+          </div>
+        </div>
+
+        <table id="tbl_satisfactions">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>工单ID</th>
+              <th>客户</th>
+              <th>客服</th>
+              <th>评分</th>
+              <th>分类</th>
+              <th>评论</th>
+              <th>创建时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+
+        <div class="pagination">
+          <button id="btn_satisfaction_prev" disabled>上一页</button>
+          <span id="satisfaction_page_info">第1页 / 共1页</span>
+          <button id="btn_satisfaction_next" disabled>下一页</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="sla" class="tab">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>SLA 配置管理</h3>
+          <div class="controls">
+            <button id="btn_new_sla_config">新建配置</button>
+            <button id="btn_sla_stats">统计报告</button>
+          </div>
+        </div>
+
+        <!-- SLA统计卡片 -->
+        <div class="stats-cards">
+          <div class="stat-card">
+            <h4>配置总数</h4>
+            <div id="sla_total_configs">-</div>
+          </div>
+          <div class="stat-card">
+            <h4>启用配置</h4>
+            <div id="sla_active_configs">-</div>
+          </div>
+          <div class="stat-card">
+            <h4>合规率</h4>
+            <div id="sla_compliance_rate">-</div>
+          </div>
+          <div class="stat-card">
+            <h4>未解决违约</h4>
+            <div id="sla_unresolved_violations">-</div>
+          </div>
+        </div>
+
+        <!-- SLA图表区域 -->
+        <div class="chart-container">
+          <div class="chart-panel">
+            <h3>SLA合规趋势</h3>
+            <div id="sla-compliance-trend-chart" style="width: 100%; height: 300px;"></div>
+          </div>
+          <div class="chart-panel">
+            <h3>违约类型分布</h3>
+            <div id="sla-violation-type-chart" style="width: 100%; height: 300px;"></div>
+          </div>
+        </div>
+
+        <div class="chart-container">
+          <div class="chart-panel">
+            <h3>按优先级统计违约</h3>
+            <div id="sla-violation-priority-chart" style="width: 100%; height: 300px;"></div>
+          </div>
+        </div>
+
+        <table id="tbl_sla_configs">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>名称</th>
+              <th>优先级</th>
+              <th>首响时间(分钟)</th>
+              <th>解决时间(分钟)</th>
+              <th>升级时间(分钟)</th>
+              <th>仅工作时间</th>
+              <th>状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+
+        <div class="pagination" id="sla_configs_pagination">
+          <button id="btn_sla_configs_prev" disabled>上一页</button>
+          <span id="sla_configs_page_info">第1页 / 共1页</span>
+          <button id="btn_sla_configs_next" disabled>下一页</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>SLA 违约记录</h3>
+        <div class="controls">
+          <select id="sla_violation_filter_type">
+            <option value="">所有类型</option>
+            <option value="first_response">首次响应</option>
+            <option value="resolution">解决时间</option>
+          </select>
+          <select id="sla_violation_filter_resolved">
+            <option value="">所有状态</option>
+            <option value="false">未解决</option>
+            <option value="true">已解决</option>
+          </select>
+          <input type="date" id="sla_violation_filter_date_from" placeholder="开始日期">
+          <input type="date" id="sla_violation_filter_date_to" placeholder="结束日期">
+          <button id="btn_sla_violation_filter">筛选</button>
+        </div>
+
+        <table id="tbl_sla_violations">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>工单ID</th>
+              <th>SLA配置</th>
+              <th>违约类型</th>
+              <th>截止时间</th>
+              <th>违约时间</th>
+              <th>状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+
+        <div class="pagination" id="sla_violations_pagination">
+          <button id="btn_sla_violations_prev" disabled>上一页</button>
+          <span id="sla_violations_page_info">第1页 / 共1页</span>
+          <button id="btn_sla_violations_next" disabled>下一页</button>
+        </div>
+      </div>
+
+      <!-- SLA配置表单模态框 -->
+      <div id="sla_config_modal" class="modal" style="display: none;">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3 id="sla_config_modal_title">新建SLA配置</h3>
+            <span class="modal-close">&times;</span>
+          </div>
+          <form id="form_sla_config">
+            <div class="form-group">
+              <label for="sla_config_name">配置名称 *</label>
+              <input type="text" id="sla_config_name" name="name" required>
+            </div>
+            <div class="form-group">
+              <label for="sla_config_priority">优先级 *</label>
+              <select id="sla_config_priority" name="priority" required>
+                <option value="">请选择优先级</option>
+                <option value="low">低</option>
+                <option value="normal">正常</option>
+                <option value="high">高</option>
+                <option value="urgent">紧急</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="sla_config_first_response">首次响应时间(分钟) *</label>
+              <input type="number" id="sla_config_first_response" name="first_response_time" min="1" required>
+            </div>
+            <div class="form-group">
+              <label for="sla_config_resolution">解决时间(分钟) *</label>
+              <input type="number" id="sla_config_resolution" name="resolution_time" min="1" required>
+            </div>
+            <div class="form-group">
+              <label for="sla_config_escalation">升级时间(分钟) *</label>
+              <input type="number" id="sla_config_escalation" name="escalation_time" min="1" required>
+            </div>
+            <div class="form-group">
+              <label>
+                <input type="checkbox" id="sla_config_business_hours" name="business_hours_only">
+                仅在工作时间内生效
+              </label>
+            </div>
+            <div class="form-group">
+              <label>
+                <input type="checkbox" id="sla_config_active" name="active" checked>
+                启用此配置
+              </label>
+            </div>
+            <div class="form-actions">
+              <button type="button" id="btn_sla_config_cancel">取消</button>
+              <button type="submit">保存</button>
+            </div>
+          </form>
+        </div>
       </div>
     </section>
 

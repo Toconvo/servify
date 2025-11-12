@@ -113,6 +113,7 @@ func main() {
         &models.User{}, &models.Customer{}, &models.Agent{}, &models.Session{}, &models.Message{},
         &models.Ticket{}, &models.TicketComment{}, &models.TicketFile{}, &models.TicketStatus{},
         &models.KnowledgeDoc{}, &models.WebRTCConnection{}, &models.DailyStats{},
+        &models.SLAConfig{}, &models.SLAViolation{}, &models.CustomerSatisfaction{}, &models.ShiftSchedule{},
     ); err != nil {
         appLogger.Fatalf("Failed to migrate database: %v", err)
     }
@@ -155,9 +156,16 @@ func main() {
     ticketService := services.NewTicketService(db, appLogger)
     sessionTransferService := services.NewSessionTransferService(db, appLogger, aiService, agentService, nil)
     statisticsService := services.NewStatisticsService(db, appLogger)
+    satisfactionService := services.NewSatisfactionService(db, appLogger)
+    slaService := services.NewSLAService(db, appLogger)
 
     // 启动统计服务后台任务
     go statisticsService.StartDailyStatsWorker()
+
+    // 启动SLA监控后台服务（每5分钟检查一次）
+    ctx, cancel := context.WithCancel(context.Background())
+    go slaService.StartSLAMonitor(ctx, 5*time.Minute)
+    defer cancel()
 
     // 初始化 Gin
     if cfg.Log.Level == "debug" {
@@ -191,6 +199,8 @@ func main() {
     handlers.RegisterTicketRoutes(api, ticketHandler(ticketService, appLogger))
     handlers.RegisterSessionTransferRoutes(api, transferHandler(sessionTransferService, appLogger))
     handlers.RegisterStatisticsRoutes(api, statisticsHandler(statisticsService, appLogger))
+    handlers.RegisterSatisfactionRoutes(api, satisfactionHandler(satisfactionService, appLogger))
+    handlers.RegisterSLARoutes(api, slaHandler(slaService, appLogger))
 
     // v1 路由组（实时/AI 与静态服务）
     v1 := r.Group("/api/v1")
@@ -266,6 +276,8 @@ func agentHandler(s *services.AgentService, l *logrus.Logger) *handlers.AgentHan
 func ticketHandler(s *services.TicketService, l *logrus.Logger) *handlers.TicketHandler { return handlers.NewTicketHandler(s, l) }
 func transferHandler(s *services.SessionTransferService, l *logrus.Logger) *handlers.SessionTransferHandler { return handlers.NewSessionTransferHandler(s, l) }
 func statisticsHandler(s *services.StatisticsService, l *logrus.Logger) *handlers.StatisticsHandler { return handlers.NewStatisticsHandler(s, l) }
+func satisfactionHandler(s *services.SatisfactionService, l *logrus.Logger) *handlers.SatisfactionHandler { return handlers.NewSatisfactionHandler(s, l) }
+func slaHandler(s *services.SLAService, l *logrus.Logger) *handlers.SLAHandler { return handlers.NewSLAHandler(s) }
 
 // helpers (copied from migrate for consistency)
 func getenvDefault(key, def string) string {
