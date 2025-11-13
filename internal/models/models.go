@@ -187,6 +187,68 @@ type WebRTCConnection struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
+// SLA 配置
+type SLAConfig struct {
+	ID                 uint    `gorm:"primaryKey" json:"id"`
+	Name               string  `gorm:"unique;not null" json:"name"`
+	Priority           string  `gorm:"not null" json:"priority"`           // low, normal, high, urgent
+	FirstResponseTime  int     `gorm:"not null" json:"first_response_time"` // 分钟
+	ResolutionTime     int     `gorm:"not null" json:"resolution_time"`     // 分钟
+	EscalationTime     int     `gorm:"not null" json:"escalation_time"`     // 分钟
+	BusinessHoursOnly  bool    `gorm:"default:false" json:"business_hours_only"`
+	Active             bool    `gorm:"default:true" json:"active"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+}
+
+// SLA 违约记录
+type SLAViolation struct {
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	TicketID       uint      `gorm:"index" json:"ticket_id"`
+	SLAConfigID    uint      `gorm:"index" json:"sla_config_id"`
+	ViolationType  string    `gorm:"not null" json:"violation_type"` // first_response, resolution, escalation
+	ExpectedTime   time.Time `json:"expected_time"`
+	ActualTime     *time.Time `json:"actual_time"`
+	ViolationTime  int       `json:"violation_time"` // 违约时间（分钟）
+	Resolved       bool      `gorm:"default:false" json:"resolved"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+
+	Ticket    Ticket    `gorm:"foreignKey:TicketID" json:"ticket,omitempty"`
+	SLAConfig SLAConfig `gorm:"foreignKey:SLAConfigID" json:"sla_config,omitempty"`
+}
+
+// 客户满意度评价
+type CustomerSatisfaction struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	TicketID  uint      `gorm:"index" json:"ticket_id"`
+	CustomerID uint     `gorm:"index" json:"customer_id"`
+	AgentID   *uint     `gorm:"index" json:"agent_id"`
+	Rating    int       `gorm:"not null;check:rating >= 1 AND rating <= 5" json:"rating"` // 1-5星
+	Comment   string    `gorm:"type:text" json:"comment"`
+	Category  string    `json:"category"` // service_quality, response_time, resolution_quality, overall
+	CreatedAt time.Time `json:"created_at"`
+
+	Ticket   Ticket    `gorm:"foreignKey:TicketID" json:"ticket,omitempty"`
+	Customer Customer  `gorm:"foreignKey:CustomerID" json:"customer,omitempty"`
+	Agent    *User     `gorm:"foreignKey:AgentID" json:"agent,omitempty"`
+}
+
+// 班次管理
+type ShiftSchedule struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	AgentID   uint      `gorm:"index" json:"agent_id"`
+	ShiftType string    `gorm:"not null" json:"shift_type"` // morning, afternoon, evening, night
+	StartTime time.Time `gorm:"not null" json:"start_time"`
+	EndTime   time.Time `gorm:"not null" json:"end_time"`
+	Date      time.Time `gorm:"index" json:"date"`
+	Status    string    `gorm:"default:'scheduled'" json:"status"` // scheduled, active, completed, cancelled
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+
+	Agent User `gorm:"foreignKey:AgentID" json:"agent,omitempty"`
+}
+
 // 统计表
 type DailyStats struct {
 	ID               uint      `gorm:"primaryKey" json:"id"`
@@ -200,6 +262,7 @@ type DailyStats struct {
 	CustomerSatisfaction float64 `gorm:"default:0" json:"customer_satisfaction"` // 平均满意度
 	AIUsageCount     int       `gorm:"default:0" json:"ai_usage_count"`
 	WeKnoraUsageCount int      `gorm:"default:0" json:"weknora_usage_count"`
+	SLAViolations    int       `gorm:"default:0" json:"sla_violations"`      // SLA违约次数
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }
