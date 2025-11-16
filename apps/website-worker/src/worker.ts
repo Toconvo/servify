@@ -19,7 +19,18 @@ export default {
       indexUrl.pathname = "/index.html";
       res = await env.ASSETS.fetch(new Request(indexUrl.toString(), request));
     }
-    return res;
+    // Add simple caching strategy:
+    // - assets/* : long cache (1 year), immutable
+    // - html     : no-cache (allow instant updates)
+    const newHeaders = new Headers(res.headers);
+    newHeaders.set("X-Served-By", "servify-website-worker");
+    const isAsset = url.pathname.startsWith("/assets/");
+    const isHTML = url.pathname.endsWith(".html") || url.pathname === "/" || url.pathname === "/index.html";
+    if (isAsset) {
+      newHeaders.set("Cache-Control", "public, max-age=31536000, immutable");
+    } else if (isHTML) {
+      newHeaders.set("Cache-Control", "no-cache, no-store, must-revalidate");
+    }
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers: newHeaders });
   },
 } satisfies ExportedHandler<Env>;
-

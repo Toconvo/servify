@@ -176,3 +176,12 @@ demo-sync-sdk:
 	@echo "Syncing SDK bundles into apps/demo-web/sdk ..."
 	chmod +x ./scripts/sync-sdk-to-demo.sh
 	./scripts/sync-sdk-to-demo.sh
+
+# Website (Cloudflare Worker) commands
+website-dev:
+	@echo "Starting Cloudflare Worker dev for website..."
+	npm -C apps/website-worker run dev
+
+website-deploy:
+	@echo "Deploying website to Cloudflare Workers (requires wrangler login and secrets)..."
+	npx --yes wrangler deploy --config apps/website-worker/wrangler.toml
