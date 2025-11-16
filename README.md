@@ -127,6 +127,11 @@ curl -s http://localhost:8080/api/v1/webrtc/connections | jq
     - 先在本机登录：`npx wrangler login`
     - 执行：`npm run deploy`
   - SPA 路由：对于没有扩展名的路径，Worker 会回退到 `index.html`
+  - CI 自动部署（push 到 `main` 时）：
+    - 在 GitHub 仓库设置 Secrets：
+      - `CLOUDFLARE_API_TOKEN`（具备 Workers Scripts:Edit 权限）
+      - `CLOUDFLARE_ACCOUNT_ID`（Cloudflare 账户 ID）
+    - 工作流 `.github/workflows/ci.yml` 的 `deploy-website-worker` job 会检测 Secrets 存在后自动执行 `wrangler deploy`
 
 ### 接口鉴权（JWT）
 - 管理类接口（`/api/**`）默认启用 JWT 鉴权（HS256）：
