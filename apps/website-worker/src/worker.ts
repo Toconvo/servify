@@ -49,6 +49,19 @@ export default {
       indexUrl.pathname = "/index.html";
       res = await env.ASSETS.fetch(new Request(indexUrl.toString(), request));
     }
+    // If still 404 and is an asset or .html path, attempt to serve custom 404.html
+    if (res.status === 404) {
+      const notFoundUrl = new URL(request.url);
+      notFoundUrl.pathname = "/404.html";
+      const nf = await env.ASSETS.fetch(new Request(notFoundUrl.toString(), request));
+      if (nf.ok) {
+        return new Response(nf.body, {
+          status: 404,
+          statusText: "Not Found",
+          headers: nf.headers
+        });
+      }
+    }
     // Add simple caching strategy:
     // - assets/* : long cache (1 year), immutable
     // - html     : no-cache (allow instant updates)

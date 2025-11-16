@@ -10,3 +10,8 @@ binding = "ASSETS"
 [vars]
 # Example: set additional environment variables if needed
 
+# Optional: bind to a custom domain via routes (uncomment & set your zone_id)
+# routes = [
+#   { pattern = "www.example.com/*", zone_id = "YOUR_ZONE_ID" }
+# ]
+

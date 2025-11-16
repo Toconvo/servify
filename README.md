@@ -120,6 +120,7 @@ curl -s http://localhost:8080/api/v1/webrtc/connections | jq
 #### Cloudflare Workers 发布（可选）
 - 使用 Workers 直接托管静态资源：`apps/website-worker/`
   - wrangler.toml 已绑定 `assets.directory = "../website"`，Worker 代码会从 `apps/website/` 提供静态内容
+  - 自定义域名（可选）：在 `wrangler.toml` 中填入 `routes` 与 `zone_id`（示例已注释），或在 Cloudflare 控制台为该 Worker 绑定路由
   - 本地预览：在 `apps/website-worker` 下运行
     - `npm i`
     - `npm run dev`
@@ -135,6 +136,7 @@ curl -s http://localhost:8080/api/v1/webrtc/connections | jq
   - 健康检查与站点地图：
     - `/.well-known/healthz` 或 `/healthz` 返回 `200 ok`
     - `/sitemap.xml` 动态生成，基于请求 Host 产出 URL（无需手工改域名）
+  - 自定义 404：当资源不存在时回退至 `/404.html`
 
 #### Cloudflare Pages 发布（可选）
 - 若使用 Pages，直接部署 `apps/website` 目录：
