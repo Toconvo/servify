@@ -110,6 +110,13 @@ curl -s http://localhost:8080/api/v1/webrtc/connections | jq
    - staff（admin/agent）：customers、agents、tickets、session-transfer、satisfaction
    - admin-only：statistics（/api/statistics/...）、sla（/api/sla/...）
 
+### 官网（Website）
+- 存放路径：`apps/website/`
+- 预览方式：
+  - `python3 -m http.server -d apps/website 8081`
+  - 打开 http://localhost:8081
+- 部署：任意静态站托管/CDN；对 `assets/**` 设置缓存头
+
 ### 接口鉴权（JWT）
 - 管理类接口（`/api/**`）默认启用 JWT 鉴权（HS256）：
   - 请求头：`Authorization: Bearer <token>`

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Servify - 智能客服与远程协助</title>
+  <meta name="description" content="Servify：智能客服系统，支持 AI 问答、多渠道接入与 WebRTC 远程协助。" />
+  <link rel="stylesheet" href="./assets/css/style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-wrap">
+      <div class="brand">
+        <img src="./assets/img/logo.svg" alt="Servify" class="logo" />
+        <span class="brand-text">Servify</span>
+      </div>
+      <nav class="nav">
+        <a href="#features">功能</a>
+        <a href="#ai">AI 能力</a>
+        <a href="#rtc">远程协助</a>
+        <a href="#contact">联系</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container hero-wrap">
+        <div class="hero-copy">
+          <h1>更快，更聪明的客服系统</h1>
+          <p>集成 AI 智能问答、多渠道接入与 WebRTC 远程协助，打造极致客户体验。</p>
+          <div class="cta">
+            <a class="btn primary" href="/sdk-demo.html">在线体验</a>
+            <a class="btn" href="https://github.com/Toconvo/servify" target="_blank" rel="noopener">GitHub</a>
+          </div>
+          <div class="meta">
+            <span>开源 · 易集成 · 可观测</span>
+          </div>
+        </div>
+        <div class="hero-ill">
+          <img src="./assets/img/hero-ill.svg" alt="Illustration" />
+        </div>
+      </div>
+    </section>
+
+    <section id="features" class="section">
+      <div class="container">
+        <h2>核心功能</h2>
+        <div class="grid features">
+          <div class="card">
+            <h3>多渠道接入</h3>
+            <p>统一接入 Web/微信/Telegram 等渠道，消息路由与工单联动。</p>
+          </div>
+          <div class="card">
+            <h3>AI 智能问答</h3>
+            <p>基于知识库的回答引擎，支持企业知识库（WeKnora）与降级策略。</p>
+          </div>
+          <div class="card">
+            <h3>WebRTC 远程协助</h3>
+            <p>屏幕共享与实时控制，技术支持场景响应更高效。</p>
+          </div>
+          <div class="card">
+            <h3>可观测性</h3>
+            <p>Prometheus 指标与 OTel 追踪，支持自建观测栈。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="ai" class="section alt">
+      <div class="container two-col">
+        <div>
+          <h2>更聪明的 AI 能力</h2>
+          <ul class="list">
+            <li>企业知识库（WeKnora）集成，混合检索</li>
+            <li>降级与熔断保护，稳定性优先</li>
+            <li>SDK 事件上报，端到端监控</li>
+          </ul>
+        </div>
+        <div class="img-col">
+          <img src="./assets/img/ai-ill.svg" alt="AI" />
+        </div>
+      </div>
+    </section>
+
+    <section id="rtc" class="section">
+      <div class="container two-col">
+        <div class="img-col">
+          <img src="./assets/img/rtc-ill.svg" alt="RTC" />
+        </div>
+        <div>
+          <h2>原生 WebRTC 远程协助</h2>
+          <ul class="list">
+            <li>低门槛：浏览器原生，无需插件</li>
+            <li>高效率：P2P 传输，低延迟</li>
+            <li>安全：细粒度权限控制</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer" id="contact">
+    <div class="container footer-wrap">
+      <div>© <span id="y"></span> Servify. All rights reserved.</div>
+      <div class="links">
+        <a href="https://github.com/Toconvo/servify" target="_blank" rel="noopener">GitHub</a>
+        <a href="/ws-demo.html">WS Demo</a>
+        <a href="/sdk-demo.html">SDK Demo</a>
+      </div>
+    </div>
+  </footer>
+  <script src="./assets/js/main.js"></script>
+</body>
+<script>
+  document.getElementById('y').textContent = new Date().getFullYear();
+</script>
+</html>
