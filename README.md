@@ -132,6 +132,18 @@ curl -s http://localhost:8080/api/v1/webrtc/connections | jq
       - `CLOUDFLARE_API_TOKEN`（具备 Workers Scripts:Edit 权限）
       - `CLOUDFLARE_ACCOUNT_ID`（Cloudflare 账户 ID）
     - 工作流 `.github/workflows/ci.yml` 的 `deploy-website-worker` job 会检测 Secrets 存在后自动执行 `wrangler deploy`
+  - 健康检查与站点地图：
+    - `/.well-known/healthz` 或 `/healthz` 返回 `200 ok`
+    - `/sitemap.xml` 动态生成，基于请求 Host 产出 URL（无需手工改域名）
+
+#### Cloudflare Pages 发布（可选）
+- 若使用 Pages，直接部署 `apps/website` 目录：
+  - CI 自动部署（push 到 `main` 时）：
+    - 同样需要 `CLOUDFLARE_API_TOKEN` 和 `CLOUDFLARE_ACCOUNT_ID`
+    - 可选变量：仓库 `Variables` 设置 `CF_PAGES_PROJECT`（默认值 `servify-website`）
+    - 工作流 `deploy-website-pages` 会仅在 `apps/website` 变更时执行 `wrangler pages deploy`
+  - 本地：
+    - `make website-pages-deploy`（需要已登录 wrangler，项目名可通过 `CF_PAGES_PROJECT` 环境变量覆盖）
 
 ### 接口鉴权（JWT）
 - 管理类接口（`/api/**`）默认启用 JWT 鉴权（HS256）：

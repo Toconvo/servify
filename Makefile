@@ -185,3 +185,10 @@ website-dev:
 website-deploy:
 	@echo "Deploying website to Cloudflare Workers (requires wrangler login and secrets)..."
 	npx --yes wrangler deploy --config apps/website-worker/wrangler.toml
+
+website-pages-deploy:
+	@echo "Deploying website to Cloudflare Pages..."
+	@if ! command -v wrangler >/dev/null 2>&1; then echo 'wrangler not found. Install with: npm i -g wrangler'; exit 1; fi
+	@CF_PAGES_PROJECT=$${CF_PAGES_PROJECT:-servify-website}; \
+	echo "Using project name: $$CF_PAGES_PROJECT"; \
+	wrangler pages deploy apps/website --project-name "$$CF_PAGES_PROJECT"

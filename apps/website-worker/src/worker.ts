@@ -11,6 +11,36 @@ export default {
   async fetch(request, env, ctx): Promise<Response> {
     // Try to serve static asset
     const url = new URL(request.url);
+
+    // Health checks
+    if (url.pathname === "/.well-known/healthz" || url.pathname === "/healthz") {
+      return new Response("ok", {
+        status: 200,
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-cache",
+        },
+      });
+    }
+
+    // Dynamic sitemap using the current host
+    if (url.pathname === "/sitemap.xml") {
+      const base = `${url.origin}`;
+      const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>${base}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>${base}/sdk-demo.html</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>${base}/ws-demo.html</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+</urlset>`;
+      return new Response(sitemap, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/xml; charset=utf-8",
+          "Cache-Control": "no-cache",
+        },
+      });
+    }
+
     let res = await env.ASSETS.fetch(request);
 
     // If not found and looks like a SPA route (no dot/extension), fallback to index.html
