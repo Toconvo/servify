@@ -31,6 +31,24 @@ export default {
     } else if (isHTML) {
       newHeaders.set("Cache-Control", "no-cache, no-store, must-revalidate");
     }
+    // Security headers (reasonable defaults; HSTS effective over HTTPS)
+    newHeaders.set("X-Content-Type-Options", "nosniff");
+    newHeaders.set("Referrer-Policy", "no-referrer-when-downgrade");
+    newHeaders.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    // CSP: allow self assets; allow inline styles for this minimal site; images from self and data:
+    const csp = [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data:",
+      "connect-src 'self'",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'"
+    ].join("; ");
+    newHeaders.set("Content-Security-Policy", csp);
+    // Optional HSTS (uncomment if domain is HTTPS-only)
+    // newHeaders.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
     return new Response(res.body, { status: res.status, statusText: res.statusText, headers: newHeaders });
   },
 } satisfies ExportedHandler<Env>;
