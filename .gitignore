@@ -1,7 +1,7 @@
 # 构建产物
 /servify
 *.exe
-server
+/server
 
 # 配置文件
 .env
