@@ -117,6 +117,17 @@ curl -s http://localhost:8080/api/v1/webrtc/connections | jq
   - 打开 http://localhost:8081
 - 部署：任意静态站托管/CDN；对 `assets/**` 设置缓存头
 
+#### Cloudflare Workers 发布（可选）
+- 使用 Workers 直接托管静态资源：`apps/website-worker/`
+  - wrangler.toml 已绑定 `assets.directory = "../website"`，Worker 代码会从 `apps/website/` 提供静态内容
+  - 本地预览：在 `apps/website-worker` 下运行
+    - `npm i`
+    - `npm run dev`
+  - 部署：
+    - 先在本机登录：`npx wrangler login`
+    - 执行：`npm run deploy`
+  - SPA 路由：对于没有扩展名的路径，Worker 会回退到 `index.html`
+
 ### 接口鉴权（JWT）
 - 管理类接口（`/api/**`）默认启用 JWT 鉴权（HS256）：
   - 请求头：`Authorization: Bearer <token>`

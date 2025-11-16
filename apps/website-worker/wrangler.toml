@@ -1,0 +1,12 @@
+name = "servify-website"
+main = "src/worker.ts"
+compatibility_date = "2025-01-01"
+
+# Serve static assets from the website source (apps/website)
+[assets]
+directory = "../website"
+binding = "ASSETS"
+
+[vars]
+# Example: set additional environment variables if needed
+
