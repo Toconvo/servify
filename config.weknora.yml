@@ -114,6 +114,24 @@ security:
     enabled: true
     requests_per_minute: 60
     burst: 10
+    # 使用 Header 值作为限流 Key（可选：X-API-Key / X-Forwarded-For）
+    key_header: "X-API-Key"
+    whitelist_ips: ["127.0.0.1"]
+    whitelist_keys: ["internal-test-key"]
+    # 可选：按路径覆盖（前缀匹配，优先匹配）
+    paths:
+      - enabled: true
+        prefix: "/api/v1/ai/query"
+        requests_per_minute: 30
+        burst: 10
+      - enabled: true
+        prefix: "/api/v1/metrics/ingest"
+        requests_per_minute: 120
+        burst: 30
+      - enabled: true
+        prefix: "/api/"
+        requests_per_minute: 60
+        burst: 15
 
 # 新增：文件上传配置（支持 WeKnora 文档上传）
 upload:

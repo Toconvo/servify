@@ -21,7 +21,7 @@ mkdir -p "$OUT_DIR" "$GOCACHE"
 
 # 运行所有测试并生成覆盖率报告
 echo "📊 Running tests with coverage (no race)..."
-go test -v -coverprofile="$OUT_DIR/coverage.out" ./internal/services/... ./internal/handlers/...
+go test -v -coverprofile="$OUT_DIR/coverage.out" ./apps/server/internal/services/... ./apps/server/internal/handlers/...
 
 # 生成覆盖率HTML报告
 echo "📈 Generating coverage report..."
@@ -34,7 +34,7 @@ go tool cover -func="$OUT_DIR/coverage.out" | tail -1
 # 运行基准测试
 echo ""
 echo "⚡ Running benchmark tests..."
-go test -bench=. -benchmem ./internal/services/... ./internal/handlers/... > "$OUT_DIR/benchmark.txt"
+go test -bench=. -benchmem ./apps/server/internal/services/... ./apps/server/internal/handlers/... > "$OUT_DIR/benchmark.txt"
 
 echo ""
 echo "✅ Test run completed!"

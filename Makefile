@@ -27,43 +27,41 @@ help:
 # Build the application
 build:
 	@echo "Building Servify..."
-	go build -o bin/servify cmd/server/main.go
-	go build -o bin/migrate cmd/migrate/main.go
-	go build -o bin/servify-cli ./cmd/cli
+	$(MAKE) _build-with-ldflags
 
 # Build CLI targets
 build-cli:
 	@echo "Building CLI (standard)..."
-	go build -o bin/servify-cli ./cmd/cli
+	$(MAKE) _build-cli-with-ldflags
 
 build-weknora:
 	@echo "Building CLI (weknora)..."
-	go build -tags weknora -o bin/servify-cli-weknora ./cmd/cli
+	$(MAKE) _build-cli-weknora-with-ldflags
 
 # Run the application
 run:
 	@echo "Starting Servify server..."
-	go run cmd/server/main.go
+	go -C apps/server run ./cmd/server
 
 run-cli:
 	@echo "Running CLI (standard)..."
-	go run ./cmd/cli -c $(or $(CONFIG),./config.yml) run
+	go -C apps/server run ./cmd/cli -c $(or $(CONFIG),../../config.yml) run
 
 run-weknora:
 	@echo "Running CLI (weknora)..."
-	go run -tags weknora ./cmd/cli -c $(or $(CONFIG),./config.weknora.yml) run
+	go -C apps/server run -tags weknora ./cmd/cli -c $(or $(CONFIG),../../config.weknora.yml) run
 
 # Run database migrations
 migrate:
 	@echo "Running database migrations..."
 	DB_HOST=$(DB_HOST) DB_PORT=$(DB_PORT) DB_USER=$(DB_USER) DB_PASSWORD=$(DB_PASSWORD) DB_NAME=$(DB_NAME) DB_SSLMODE=$(or $(DB_SSLMODE),disable) DB_TIMEZONE=$(or $(DB_TIMEZONE),UTC) \
-	go run cmd/migrate/main.go $(MIGRATE_ARGS)
+	go -C apps/server run ./cmd/migrate $(MIGRATE_ARGS)
 
 # Run database migrations with seed data
 migrate-seed:
 	@echo "Running database migrations with seed data..."
 	DB_HOST=$(DB_HOST) DB_PORT=$(DB_PORT) DB_USER=$(DB_USER) DB_PASSWORD=$(DB_PASSWORD) DB_NAME=$(DB_NAME) DB_SSLMODE=$(or $(DB_SSLMODE),disable) DB_TIMEZONE=$(or $(DB_TIMEZONE),UTC) \
-	go run cmd/migrate/main.go --seed $(MIGRATE_ARGS)
+	go -C apps/server run ./cmd/migrate --seed $(MIGRATE_ARGS)
 
 # Run tests
 test:
@@ -88,23 +86,23 @@ docker-run:
 
 docker-up-weknora:
 	@echo "Starting WeKnora stack..."
-	docker-compose -f docker-compose.yml -f docker-compose.weknora.yml up -d
+	docker-compose -f infra/compose/docker-compose.yml -f infra/compose/docker-compose.weknora.yml up -d
 
 docker-down:
 	@echo "Stopping services..."
-	docker-compose down
+	docker-compose -f infra/compose/docker-compose.yml down
 
 docker-logs-weknora:
 	@echo "Tailing servify logs..."
-	docker-compose -f docker-compose.yml -f docker-compose.weknora.yml logs -f servify
+	docker-compose -f infra/compose/docker-compose.yml -f infra/compose/docker-compose.weknora.yml logs -f servify
 
 docker-up-observ:
 	@echo "Starting observability stack (OTel Collector + Jaeger)..."
-	docker-compose -f docker-compose.observability.yml up -d
+	docker-compose -f infra/compose/docker-compose.observability.yml up -d
 
 docker-down-observ:
 	@echo "Stopping observability stack..."
-	docker-compose -f docker-compose.observability.yml down -v
+	docker-compose -f infra/compose/docker-compose.observability.yml down -v
 
 # Stop Docker Compose services
 docker-stop:
@@ -133,14 +131,31 @@ lint:
 # Update dependencies
 update-deps:
 	@echo "Updating dependencies..."
-	go mod tidy
-	go mod download
+	go -C apps/server mod tidy
+	go -C apps/server mod download
 
 # Generate API documentation (if using swag)
 docs:
 	@echo "Generating API documentation..."
 	@command -v swag >/dev/null 2>&1 || { echo "swag is not installed. Install with: go install github.com/swaggo/swag/cmd/swag@latest"; exit 1; }
-	swag init -g cmd/server/main.go -o docs/
+	swag init -g apps/server/cmd/server/main.go -o docs/
+
+# Internal targets with ldflags (version info)
+VERSION ?= dev
+GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
+BUILD_TIME := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS := -X 'servify/apps/server/internal/version.Version=$(VERSION)' -X 'servify/apps/server/internal/version.Commit=$(GIT_COMMIT)' -X 'servify/apps/server/internal/version.BuildTime=$(BUILD_TIME)'
+
+_build-with-ldflags:
+	go -C apps/server build -ldflags "$(LDFLAGS)" -o ../../bin/servify ./cmd/server
+	go -C apps/server build -ldflags "$(LDFLAGS)" -o ../../bin/migrate ./cmd/migrate
+	go -C apps/server build -ldflags "$(LDFLAGS)" -o ../../bin/servify-cli ./cmd/cli
+
+_build-cli-with-ldflags:
+	go -C apps/server build -ldflags "$(LDFLAGS)" -o ../../bin/servify-cli ./cmd/cli
+
+_build-cli-weknora-with-ldflags:
+	go -C apps/server build -ldflags "$(LDFLAGS)" -tags weknora -o ../../bin/servify-cli-weknora ./cmd/cli
 
 # Database operations
 db-reset: migrate-seed
@@ -154,4 +169,10 @@ status:
 # View logs (for Docker Compose)
 logs:
 	@echo "Showing application logs..."
-	docker-compose logs -f servify
+	docker-compose -f infra/compose/docker-compose.yml logs -f servify
+
+# Sync SDK bundles into demo web
+demo-sync-sdk:
+	@echo "Syncing SDK bundles into apps/demo-web/sdk ..."
+	chmod +x ./scripts/sync-sdk-to-demo.sh
+	./scripts/sync-sdk-to-demo.sh

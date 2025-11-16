@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Servify SDK - 原生 JavaScript 示例</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .chat-area {
+            height: 400px;
+            overflow-y: auto;
+            padding: 20px;
+            border-bottom: 1px solid #eee;
+        }
+        .message {
+            margin-bottom: 15px;
+            padding: 10px 15px;
+            border-radius: 18px;
+            max-width: 70%;
+            word-wrap: break-word;
+        }
+        .message.customer {
+            background: #007AFF;
+            color: white;
+            margin-left: auto;
+        }
+        .message.agent {
+            background: #e5e5ea;
+            color: #000;
+        }
+        .message.system {
+            background: #ffeb3b;
+            color: #333;
+            text-align: center;
+            margin: 10px auto;
+            font-size: 12px;
+        }
+        .controls {
+            padding: 20px;
+            background: #f8f9fa;
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .input-group input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 16px;
+        }
+        .btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .btn.primary {
+            background: #007AFF;
+            color: white;
+        }
+        .btn.secondary {
+            background: #6c757d;
+            color: white;
+        }
+        .btn.success {
+            background: #28a745;
+            color: white;
+        }
+        .btn.danger {
+            background: #dc3545;
+            color: white;
+        }
+        .btn:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .status {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #e9ecef;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-dot.connected {
+            background: #28a745;
+        }
+        .status-dot.disconnected {
+            background: #dc3545;
+        }
+        .file-input {
+            display: none;
+        }
+        .typing-indicator {
+            font-style: italic;
+            color: #666;
+            padding: 10px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Servify 客服系统</h1>
+            <p>原生 JavaScript SDK 示例</p>
+        </div>
+
+        <div class="status">
+            <div style="display: flex; align-items: center;">
+                <div id="status-dot" class="status-dot disconnected"></div>
+                <span id="status-text">正在连接...</span>
+            </div>
+            <div id="agent-info" style="display: none;">
+                <span>客服代理：<strong id="agent-name"></strong></span>
+            </div>
+        </div>
+
+        <div class="chat-area" id="chat-area">
+            <div class="message system">
+                欢迎使用 Servify 客服系统！请开始聊天。
+            </div>
+        </div>
+
+        <div id="typing-indicator" class="typing-indicator" style="display: none;">
+            客服正在输入...
+        </div>
+
+        <div class="controls">
+            <div class="input-group">
+                <input type="text" id="message-input" placeholder="输入您的消息..." maxlength="1000">
+                <button class="btn secondary" onclick="selectFile()">📎</button>
+                <button class="btn primary" onclick="sendMessage()" id="send-btn">发送</button>
+            </div>
+
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button class="btn success" onclick="startChat()" id="start-btn">开始聊天</button>
+                <button class="btn danger" onclick="endChat()" id="end-btn" disabled>结束聊天</button>
+                <button class="btn secondary" onclick="askAI()" id="ai-btn">AI 助手</button>
+                <button class="btn secondary" onclick="createTicket()" id="ticket-btn">创建工单</button>
+                <button class="btn secondary" onclick="showRating()" id="rating-btn">评价服务</button>
+            </div>
+
+            <input type="file" id="file-input" class="file-input" onchange="uploadFile(event)">
+        </div>
+    </div>
+
+    <!-- 加载 SDK -->
+    <script src="../../packages/vanilla/dist/index.js"></script>
+
+    <script>
+        // 初始化 SDK
+        const servify = new Servify({
+            apiUrl: 'http://localhost:8080',
+            customerName: 'JavaScript 用户',
+            customerEmail: 'user@example.com',
+            debug: true
+        });
+
+        // DOM 元素
+        const chatArea = document.getElementById('chat-area');
+        const messageInput = document.getElementById('message-input');
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        const agentInfo = document.getElementById('agent-info');
+        const agentName = document.getElementById('agent-name');
+        const typingIndicator = document.getElementById('typing-indicator');
+        const fileInput = document.getElementById('file-input');
+
+        // 按钮元素
+        const startBtn = document.getElementById('start-btn');
+        const endBtn = document.getElementById('end-btn');
+        const sendBtn = document.getElementById('send-btn');
+
+        // 初始化 SDK
+        async function initSDK() {
+            try {
+                await servify.init();
+                console.log('SDK 初始化成功');
+            } catch (error) {
+                console.error('SDK 初始化失败:', error);
+                addMessage('system', 'SDK 初始化失败，请刷新页面重试');
+            }
+        }
+
+        // 事件监听器
+        servify.on('connected', () => {
+            statusDot.className = 'status-dot connected';
+            statusText.textContent = '已连接';
+        });
+
+        servify.on('disconnected', (reason) => {
+            statusDot.className = 'status-dot disconnected';
+            statusText.textContent = `已断开连接: ${reason}`;
+            agentInfo.style.display = 'none';
+        });
+
+        servify.on('message', (message) => {
+            addMessage(message.sender_type, message.content);
+        });
+
+        servify.on('sessionCreated', (session) => {
+            addMessage('system', '聊天会话已创建');
+            startBtn.disabled = true;
+            endBtn.disabled = false;
+            sendBtn.disabled = false;
+        });
+
+        servify.on('sessionEnded', () => {
+            addMessage('system', '聊天会话已结束');
+            startBtn.disabled = false;
+            endBtn.disabled = true;
+            sendBtn.disabled = true;
+            agentInfo.style.display = 'none';
+        });
+
+        servify.on('agentAssigned', (agent) => {
+            agentName.textContent = agent.name;
+            agentInfo.style.display = 'block';
+            addMessage('system', `客服 ${agent.name} 已为您服务`);
+        });
+
+        servify.on('agentTyping', (isTyping) => {
+            typingIndicator.style.display = isTyping ? 'block' : 'none';
+        });
+
+        servify.on('error', (error) => {
+            console.error('SDK 错误:', error);
+            addMessage('system', `错误: ${error.message}`);
+        });
+
+        // 功能函数
+        async function startChat() {
+            try {
+                await servify.startChat({
+                    priority: 'normal',
+                    message: '您好，我需要帮助'
+                });
+            } catch (error) {
+                alert('开始聊天失败: ' + error.message);
+            }
+        }
+
+        async function sendMessage() {
+            const content = messageInput.value.trim();
+            if (!content) return;
+
+            try {
+                await servify.sendMessage(content);
+                addMessage('customer', content);
+                messageInput.value = '';
+            } catch (error) {
+                alert('发送消息失败: ' + error.message);
+            }
+        }
+
+        async function endChat() {
+            try {
+                await servify.endChat();
+            } catch (error) {
+                alert('结束聊天失败: ' + error.message);
+            }
+        }
+
+        async function askAI() {
+            const question = prompt('请输入您的问题：');
+            if (!question) return;
+
+            try {
+                const response = await servify.askAI(question);
+                addMessage('system', `AI 回答 (置信度: ${(response.confidence * 100).toFixed(1)}%): ${response.answer}`);
+            } catch (error) {
+                alert('AI 问答失败: ' + error.message);
+            }
+        }
+
+        async function createTicket() {
+            const title = prompt('工单标题：');
+            if (!title) return;
+
+            const description = prompt('问题描述：');
+            if (!description) return;
+
+            try {
+                const ticket = await servify.createTicket({
+                    title,
+                    description,
+                    category: 'general',
+                    priority: 'normal'
+                });
+                addMessage('system', `工单已创建，编号: #${ticket.id}`);
+            } catch (error) {
+                alert('创建工单失败: ' + error.message);
+            }
+        }
+
+        function showRating() {
+            const rating = prompt('请为服务评分 (1-5)：');
+            const ratingNum = parseInt(rating);
+
+            if (isNaN(ratingNum) || ratingNum < 1 || ratingNum > 5) {
+                alert('请输入有效的评分 (1-5)');
+                return;
+            }
+
+            const comment = prompt('请输入评价内容（可选）：') || '';
+
+            servify.submitRating(ratingNum, comment).then(() => {
+                addMessage('system', '感谢您的评价！');
+            }).catch((error) => {
+                alert('提交评价失败: ' + error.message);
+            });
+        }
+
+        function selectFile() {
+            fileInput.click();
+        }
+
+        async function uploadFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            try {
+                const result = await servify.uploadFile(file);
+                addMessage('customer', `文件已上传: ${result.fileName}`);
+                addMessage('system', `文件大小: ${(result.fileSize / 1024).toFixed(1)} KB`);
+            } catch (error) {
+                alert('文件上传失败: ' + error.message);
+            }
+        }
+
+        function addMessage(type, content) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = content;
+
+            chatArea.appendChild(messageDiv);
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        // 回车发送消息
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !sendBtn.disabled) {
+                sendMessage();
+            }
+        });
+
+        // 初始化
+        initSDK();
+    </script>
+</body>
+</html>

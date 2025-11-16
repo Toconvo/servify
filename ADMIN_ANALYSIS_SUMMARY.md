@@ -138,11 +138,11 @@
 
 ```
 /Users/cui/Workspaces/servify/
-├── web/admin/                    # 管理后台前端
+├── apps/demo-web/admin/          # 管理后台前端
 │   ├── index.html               # 仪表板模板
 │   ├── main.js                  # 交互逻辑
 │   └── style.css                # 样式表
-├── internal/
+├── apps/server/internal/
 │   ├── handlers/                # HTTP 处理器
 │   │   ├── ticket_handler.go    # 工单处理
 │   │   ├── customer_handler.go  # 客户处理
@@ -214,4 +214,3 @@ Servify 的后台管理系统是一个**功能完整的 MVP**，具有：
 ⚠️ 实时通信能力
 
 **推荐评级**: 生产环境可用，但应逐步完善高优先级功能。
-

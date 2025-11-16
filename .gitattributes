@@ -1,0 +1,46 @@
+# Default line endings and text normalization
+* text=auto eol=lf
+
+# Specific text files
+*.sh      text eol=lf
+*.bash    text eol=lf
+Makefile  text eol=lf
+*.bat     text eol=crlf
+
+# Go / JS / TS / Config
+*.go   text
+go.mod text
+go.sum text
+go.work text
+*.ts   text
+*.tsx  text
+*.js   text
+*.jsx  text
+*.json text
+*.yml  text
+*.yaml text
+*.md   text
+*.txt  text
+
+# Binary files
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.pdf  binary
+*.zip  binary
+*.tar  binary
+*.tar.gz binary
+*.tgz  binary
+*.exe  binary
+*.dll  binary
+*.so   binary
+bin/*  binary
+server binary
+
+# GitHub Linguist tuning
+# Count SDK source, but ignore built artifacts
+sdk/packages/*/dist/** linguist-generated=true
+apps/demo-web/sdk/**    linguist-generated=true linguist-vendored=true
+vendor/**               linguist-vendored=true
+

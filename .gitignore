@@ -1,6 +1,7 @@
 # 构建产物
 /servify
 *.exe
+server
 
 # 配置文件
 .env
@@ -36,3 +37,6 @@ scripts/test-results/
 # 缓存文件
 .cache/
 bin/
+apps/demo-web/sdk/servify-sdk.esm.js
+apps/demo-web/sdk/servify-sdk.umd.js
+apps/demo-web/sdk/index.d.ts

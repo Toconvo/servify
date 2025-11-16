@@ -18,10 +18,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            sdk/package-lock.json
+            sdk/packages/*/package-lock.json
+
+      - name: Install SDK deps
+        run: npm -C sdk ci
+
+      - name: Build SDK
+        run: npm -C sdk run build
+      - name: Sync SDK to demo
+        run: |
+          chmod +x scripts/sync-sdk-to-demo.sh
+          ./scripts/sync-sdk-to-demo.sh
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: apps/server/go.mod
 
       - name: Set Go cache paths to workspace (avoid global HOME collisions)
         run: |
@@ -40,16 +59,16 @@ jobs:
             ${{ runner.os }}-go-modcachev2-
 
       - name: Tidy
-        run: go mod tidy
+        run: go -C apps/server mod tidy
 
       - name: Build (standard)
         run: make build
 
       - name: Build Server Entry
-        run: go build -o bin/servify ./cmd/server
+        run: echo "Skipped (built via 'make build' with ldflags)"
 
       - name: Build (weknora tag)
-        run: go build -tags weknora -o bin/servify-cli-weknora ./cmd/cli
+        run: make build-weknora
 
       - name: Test
         env:
@@ -67,11 +86,11 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: apps/server/go.mod
 
       - name: Compose Up (WeKnora stack)
         run: |
-          docker-compose -f docker-compose.yml -f docker-compose.weknora.yml up -d
+          docker-compose -f infra/compose/docker-compose.yml -f infra/compose/docker-compose.weknora.yml up -d
 
       - name: Wait For Health
         run: |
@@ -88,4 +107,4 @@ jobs:
       - name: Compose Down
         if: always()
         run: |
-          docker-compose -f docker-compose.yml -f docker-compose.weknora.yml down -v
+          docker-compose -f infra/compose/docker-compose.yml -f infra/compose/docker-compose.weknora.yml down -v

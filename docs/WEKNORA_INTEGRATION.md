@@ -14,13 +14,13 @@
    - 更新了技术架构图和技术栈说明
 
 2. **技术实施方案设计** ✅
-   - 完整的 WeKnora 客户端实现 (`pkg/weknora/`)
-   - 增强的 AI 服务设计 (`internal/services/ai_enhanced.go`)
+   - 完整的 WeKnora 客户端实现 (`apps/server/pkg/weknora/`)
+   - 增强的 AI 服务设计 (`apps/server/internal/services/ai_enhanced.go`)
    - 降级策略和熔断器机制
    - 数据结构和接口定义
 
 3. **开发环境配置** ✅
-   - Docker Compose 集成配置 (`docker-compose.weknora.yml`)
+   - Docker Compose 集成配置 (`infra/compose/docker-compose.weknora.yml`)
    - 数据库初始化脚本 (`scripts/init-db.sql`)
    - 环境变量配置模板 (`.env.weknora.example`)
    - 配置文件模板 (`config.weknora.yml`)
@@ -117,14 +117,14 @@ servify/
 │   ├── init-knowledge-base.sh     # 知识库初始化
 │   ├── manage-knowledge-base.sh   # 知识库管理
 │   └── init-db.sql               # 数据库初始化
-├── pkg/
-│   └── weknora/                   # WeKnora 客户端
+├── apps/
+│   └── server/
+│       ├── pkg/weknora/           # WeKnora 客户端
 │       ├── client.go
 │       └── types.go
-├── internal/
-│   └── services/
-│       └── ai_enhanced.go         # 增强的 AI 服务
-├── docker-compose.weknora.yml     # WeKnora 部署配置
+│       └── internal/services/
+│           └── ai_enhanced.go     # 增强的 AI 服务
+├── infra/compose/docker-compose.weknora.yml     # WeKnora 部署配置
 ├── config.weknora.yml            # 配置文件模板
 └── .env.weknora.example          # 环境变量模板
 ```
@@ -167,17 +167,17 @@ response, err := aiService.ProcessQuery(ctx, userQuery, sessionID)
 ### 健康检查端点
 - Servify API: `GET http://localhost:8080/health`
 - WeKnora API: `GET http://localhost:9000/api/v1/health`
-- PostgreSQL: `docker-compose exec postgres pg_isready`
-- Redis: `docker-compose exec redis redis-cli ping`
+- PostgreSQL: `docker-compose -f infra/compose/docker-compose.yml exec postgres pg_isready`
+- Redis: `docker-compose -f infra/compose/docker-compose.yml exec redis redis-cli ping`
 
 ### 日志查看
 ```bash
 # 查看所有服务日志
-docker-compose logs -f
+docker-compose -f infra/compose/docker-compose.yml -f infra/compose/docker-compose.weknora.yml logs -f
 
 # 查看特定服务日志
-docker-compose logs -f servify
-docker-compose logs -f weknora
+docker-compose -f infra/compose/docker-compose.yml -f infra/compose/docker-compose.weknora.yml logs -f servify
+docker-compose -f infra/compose/docker-compose.yml -f infra/compose/docker-compose.weknora.yml logs -f weknora
 
 # 查看应用日志文件
 tail -f logs/servify.log
@@ -186,7 +186,7 @@ tail -f logs/servify.log
 ### 性能监控
 ```bash
 # 查看服务状态
-docker-compose ps
+docker-compose -f infra/compose/docker-compose.yml -f infra/compose/docker-compose.weknora.yml ps
 
 # 查看资源使用情况
 docker stats
@@ -255,13 +255,13 @@ lsof -i :9000
 docker-compose config
 
 # 查看详细错误日志
-docker-compose logs weknora
+docker-compose -f infra/compose/docker-compose.yml -f infra/compose/docker-compose.weknora.yml logs weknora
 ```
 
 #### 2. 数据库连接失败
 ```bash
 # 检查数据库状态
-docker-compose exec postgres pg_isready -U postgres
+docker-compose -f infra/compose/docker-compose.yml exec postgres pg_isready -U postgres
 
 # 检查网络连接
 docker network ls
@@ -283,10 +283,10 @@ curl -H "X-API-Key: default-api-key" \
 ### 版本更新
 ```bash
 # 停止服务
-docker-compose down
+docker-compose -f infra/compose/docker-compose.yml -f infra/compose/docker-compose.weknora.yml down
 
 # 更新镜像
-docker-compose pull
+docker-compose -f infra/compose/docker-compose.yml -f infra/compose/docker-compose.weknora.yml pull
 
 # 重新启动
 ./scripts/start-weknora.sh
@@ -295,7 +295,7 @@ docker-compose pull
 ### 数据备份
 ```bash
 # 备份 PostgreSQL
-docker-compose exec postgres pg_dump -U postgres servify > backup.sql
+docker-compose -f infra/compose/docker-compose.yml exec postgres pg_dump -U postgres servify > backup.sql
 
 # 备份 WeKnora 数据
 docker cp servify_weknora:/app/data ./backup/weknora_data

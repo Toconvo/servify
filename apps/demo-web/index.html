@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Servify - 智能客服系统</title>
+    <meta name="description" content="专业的智能客服系统，支持AI问答、远程协助、多平台接入。为企业提供高效的客户服务解决方案。">
+    <meta name="keywords" content="智能客服,AI客服,远程协助,客服系统,在线客服">
+    <style>
+        /* Reset and base styles */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f8fafc;
+        }
+
+        /* Utility classes */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        .flex {
+            display: flex;
+        }
+
+        .flex-col {
+            flex-direction: column;
+        }
+
+        .justify-center {
+            justify-content: center;
+        }
+
+        .justify-between {
+            justify-content: space-between;
+        }
+
+        .items-center {
+            align-items: center;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .fixed {
+            position: fixed;
+        }
+
+        .relative {
+            position: relative;
+        }
+
+        .w-full {
+            width: 100%;
+        }
+
+        .h-16 {
+            height: 4rem;
+        }
+
+        .min-h-screen {
+            min-height: 100vh;
+        }
+
+        .z-50 {
+            z-index: 50;
+        }
+
+        .mb-4 {
+            margin-bottom: 1rem;
+        }
+
+        .mb-6 {
+            margin-bottom: 1.5rem;
+        }
+
+        .mb-8 {
+            margin-bottom: 2rem;
+        }
+
+        .mb-16 {
+            margin-bottom: 4rem;
+        }
+
+        .px-4 {
+            padding-left: 1rem;
+            padding-right: 1rem;
+        }
+
+        .py-3 {
+            padding-top: 0.75rem;
+            padding-bottom: 0.75rem;
+        }
+
+        .py-8 {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+        }
+
+        .py-20 {
+            padding-top: 5rem;
+            padding-bottom: 5rem;
+        }
+
+        .pt-16 {
+            padding-top: 4rem;
+        }
+
+        .rounded-lg {
+            border-radius: 0.5rem;
+        }
+
+        .rounded-xl {
+            border-radius: 0.75rem;
+        }
+
+        .shadow-lg {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        /* Color classes */
+        .bg-white {
+            background-color: white;
+        }
+
+        .bg-gray-50 {
+            background-color: #f9fafb;
+        }
+
+        .bg-gray-900 {
+            background-color: #111827;
+        }
+
+        .bg-blue-600 {
+            background-color: #2563eb;
+        }
+
+        .bg-blue-50 {
+            background-color: #eff6ff;
+        }
+
+        .text-white {
+            color: white;
+        }
+
+        .text-gray-600 {
+            color: #4b5563;
+        }
+
+        .text-gray-900 {
+            color: #111827;
+        }
+
+        .text-blue-600 {
+            color: #2563eb;
+        }
+
+        /* Typography */
+        .text-xl {
+            font-size: 1.25rem;
+            line-height: 1.75rem;
+        }
+
+        .text-2xl {
+            font-size: 1.5rem;
+            line-height: 2rem;
+        }
+
+        .text-4xl {
+            font-size: 2.25rem;
+            line-height: 2.5rem;
+        }
+
+        .text-5xl {
+            font-size: 3rem;
+            line-height: 1;
+        }
+
+        .font-bold {
+            font-weight: 700;
+        }
+
+        .font-semibold {
+            font-weight: 600;
+        }
+
+        /* Grid */
+        .grid {
+            display: grid;
+        }
+
+        .grid-cols-1 {
+            grid-template-columns: repeat(1, minmax(0, 1fr));
+        }
+
+        .grid-cols-2 {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .grid-cols-4 {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
+        .gap-8 {
+            gap: 2rem;
+        }
+
+        /* Custom styles */
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .hero-pattern {
+            background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+        }
+
+        .card-hover {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            background: white;
+            padding: 2rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .card-hover:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+
+        .animate-float {
+            animation: float 6s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-20px); }
+        }
+
+        /* Navigation */
+        nav {
+            background: white;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            top: 0;
+            width: 100%;
+            z-index: 50;
+        }
+
+        nav .container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 4rem;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #111827;
+        }
+
+        .logo::before {
+            content: "🎧";
+            margin-right: 0.5rem;
+            font-size: 1.5rem;
+        }
+
+        .nav-links {
+            display: none;
+            align-items: center;
+            gap: 2rem;
+        }
+
+        .nav-links a {
+            color: #4b5563;
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        .nav-links a:hover {
+            color: #2563eb;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 0.75rem 2rem;
+            border-radius: 0.5rem;
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background-color: #2563eb;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #1d4ed8;
+            transform: translateY(-2px);
+        }
+
+        .btn-secondary {
+            border: 2px solid white;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background-color: white;
+            color: #2563eb;
+        }
+
+        /* Hero section */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 10;
+        }
+
+        .hero h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            color: white;
+            margin-bottom: 1.5rem;
+        }
+
+        .hero p {
+            font-size: 1.25rem;
+            color: white;
+            opacity: 0.9;
+            margin-bottom: 2rem;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .hero-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        /* Features section */
+        .feature-card {
+            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+            padding: 2rem;
+            border-radius: 0.75rem;
+            transition: transform 0.3s ease;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .feature-icon {
+            width: 4rem;
+            height: 4rem;
+            background-color: #2563eb;
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+            font-size: 1.5rem;
+            color: white;
+        }
+
+        .feature-icon.green { background-color: #059669; }
+        .feature-icon.purple { background-color: #7c3aed; }
+        .feature-icon.orange { background-color: #ea580c; }
+
+        /* Table styles */
+        .comparison-table {
+            background: white;
+            border-radius: 1rem;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .comparison-table th {
+            background: #f8fafc;
+            padding: 1rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .comparison-table td {
+            padding: 1rem;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .comparison-table tr:nth-child(even) {
+            background: #f9fafb;
+        }
+
+        /* Roadmap */
+        .roadmap {
+            position: relative;
+        }
+
+        .roadmap::before {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(to bottom, #667eea, #764ba2);
+            transform: translateX(-50%);
+        }
+
+        .roadmap-item {
+            display: flex;
+            margin-bottom: 3rem;
+            align-items: center;
+        }
+
+        .roadmap-content {
+            flex: 1;
+            padding: 1.5rem;
+            background: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .roadmap-icon {
+            width: 3rem;
+            height: 3rem;
+            background: #2563eb;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            position: relative;
+            z-index: 10;
+            margin: 0 1rem;
+        }
+
+        .roadmap-icon.inactive {
+            background: #9ca3af;
+        }
+
+        /* Footer */
+        footer {
+            background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+            color: white;
+            padding: 3rem 0 1rem;
+        }
+
+        footer a {
+            color: #9ca3af;
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        footer a:hover {
+            color: white;
+        }
+
+        /* Responsive */
+        @media (min-width: 768px) {
+            .nav-links {
+                display: flex;
+            }
+
+            .grid-md-2 {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .grid-md-4 {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
+
+            .hero-buttons {
+                flex-direction: row;
+                justify-content: center;
+            }
+
+            .hero h1 {
+                font-size: 4rem;
+            }
+
+            .hero p {
+                font-size: 1.5rem;
+            }
+        }
+
+        @media (min-width: 1024px) {
+            .grid-lg-4 {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
+        }
+
+        /* Icons using Unicode symbols */
+        .icon-comments::before { content: "💬"; }
+        .icon-brain::before { content: "🧠"; }
+        .icon-desktop::before { content: "🖥️"; }
+        .icon-plug::before { content: "🔌"; }
+        .icon-rocket::before { content: "🚀"; }
+        .icon-star::before { content: "⭐"; }
+        .icon-cloud::before { content: "☁️"; }
+        .icon-cogs::before { content: "⚙️"; }
+        .icon-chart::before { content: "📊"; }
+        .icon-crown::before { content: "👑"; }
+        .icon-go::before { content: "🐹"; }
+        .icon-js::before { content: "📜"; }
+        .icon-database::before { content: "🗄️"; }
+        .icon-memory::before { content: "💾"; }
+        .icon-github::before { content: "🐙"; }
+        .icon-envelope::before { content: "✉️"; }
+        .icon-globe::before { content: "🌐"; }
+
+        .status-yes::before { content: "✅"; margin-right: 0.5rem; }
+        .status-no::before { content: "❌"; margin-right: 0.5rem; }
+        .status-star::before { content: "⭐"; margin-right: 0.5rem; font-weight: bold; }
+        .status-version::before { content: "🔄"; margin-right: 0.5rem; }
+
+        .highlight {
+            background: linear-gradient(120deg, #a855f7 0%, #3b82f6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="fixed">
+        <div class="container">
+            <div class="logo">Servify</div>
+            <div class="nav-links">
+                <a href="#features">功能特点</a>
+                <a href="#advantages">优势</a>
+                <a href="#roadmap">路线图</a>
+                <a href="#contact">联系我们</a>
+                <a href="https://github.com/your-org/servify" target="_blank" class="btn btn-primary">
+                    GitHub
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero gradient-bg hero-pattern">
+        <div class="container text-center hero-content">
+            <div class="animate-float mb-8">
+                <div style="font-size: 5rem;">🤖</div>
+            </div>
+            <h1>下一代智能客服系统</h1>
+            <p>集成AI智能问答、远程协助、多平台接入于一体的现代化客服解决方案</p>
+            <div class="hero-buttons">
+                <a href="#features" class="btn btn-primary">立即体验</a>
+                <a href="https://github.com/your-org/servify" target="_blank" class="btn btn-secondary">查看源码</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="py-20 bg-white">
+        <div class="container">
+            <div class="text-center mb-16">
+                <h2 class="text-4xl font-bold text-gray-900 mb-4">核心功能</h2>
+                <p class="text-xl text-gray-600">为现代企业量身定制的客服功能</p>
+            </div>
+            <div class="grid grid-cols-1 grid-md-2 grid-lg-4 gap-8">
+                <div class="feature-card">
+                    <div class="feature-icon">💬</div>
+                    <h3 class="text-xl font-semibold text-gray-900 mb-4">实时聊天</h3>
+                    <p class="text-gray-600">基于WebSocket的低延迟消息传输，支持多种格式消息</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon green">🧠</div>
+                    <h3 class="text-xl font-semibold text-gray-900 mb-4">AI智能问答</h3>
+                    <p class="text-gray-600">集成OpenAI，基于知识库的智能回复，提升服务效率</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon purple">🖥️</div>
+                    <h3 class="text-xl font-semibold text-gray-900 mb-4">远程协助 <span class="highlight">⭐</span></h3>
+                    <p class="text-gray-600">创新的WebRTC远程协助功能，支持屏幕共享和远程控制</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon orange">🔌</div>
+                    <h3 class="text-xl font-semibold text-gray-900 mb-4">多平台接入</h3>
+                    <p class="text-gray-600">支持微信、QQ、飞书、Telegram等多个平台统一管理</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Advantages Section -->
+    <section id="advantages" class="py-20 bg-gray-50">
+        <div class="container">
+            <div class="text-center mb-16">
+                <h2 class="text-4xl font-bold text-gray-900 mb-4">为什么选择 Servify？</h2>
+                <p class="text-xl text-gray-600">与主流产品的竞争优势对比</p>
+            </div>
+            <div style="overflow-x: auto;">
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>功能模块</th>
+                            <th>Zendesk</th>
+                            <th>Intercom</th>
+                            <th>Freshworks</th>
+                            <th style="color: #2563eb;">Servify</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>AI智能问答</strong></td>
+                            <td><span class="status-yes">完善</span></td>
+                            <td><span class="status-yes">领先</span></td>
+                            <td><span class="status-yes">基础</span></td>
+                            <td style="color: #2563eb;"><strong><span class="status-yes">基础</span></strong></td>
+                        </tr>
+                        <tr>
+                            <td><strong>实时聊天</strong></td>
+                            <td><span class="status-yes">完善</span></td>
+                            <td><span class="status-yes">强大</span></td>
+                            <td><span class="status-yes">完善</span></td>
+                            <td style="color: #2563eb;"><strong><span class="status-yes">基础</span></strong></td>
+                        </tr>
+                        <tr>
+                            <td><strong>远程协助</strong></td>
+                            <td><span class="status-no">无</span></td>
+                            <td><span class="status-no">无</span></td>
+                            <td><span class="status-no">无</span></td>
+                            <td style="color: #2563eb;"><strong><span class="status-star">创新</span></strong></td>
+                        </tr>
+                        <tr>
+                            <td><strong>多渠道接入</strong></td>
+                            <td><span class="status-yes">全面</span></td>
+                            <td><span class="status-yes">主要</span></td>
+                            <td><span class="status-yes">完善</span></td>
+                            <td style="color: #2563eb;"><strong><span class="status-yes">基础</span></strong></td>
+                        </tr>
+                        <tr>
+                            <td><strong>工单管理</strong></td>
+                            <td><span class="status-yes">强大</span></td>
+                            <td><span class="status-yes">基础</span></td>
+                            <td><span class="status-yes">完善</span></td>
+                            <td style="color: #2563eb;"><strong><span class="status-version">v1.1</span></strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="grid grid-cols-1 grid-md-2 grid-lg-4 gap-8" style="margin-top: 3rem;">
+                <div class="text-center">
+                    <div style="width: 5rem; height: 5rem; background: #dbeafe; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; font-size: 2rem;">🚀</div>
+                    <h3 class="text-xl font-semibold text-gray-900 mb-4">技术架构先进</h3>
+                    <p class="text-gray-600">Go + WebRTC 比传统方案更高效稳定</p>
+                </div>
+                <div class="text-center">
+                    <div style="width: 5rem; height: 5rem; background: #d1fae5; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; font-size: 2rem;">⭐</div>
+                    <h3 class="text-xl font-semibold text-gray-900 mb-4">差异化创新</h3>
+                    <p class="text-gray-600">远程协助功能是主流产品缺失的创新点</p>
+                </div>
+                <div class="text-center">
+                    <div style="width: 5rem; height: 5rem; background: #e9d5ff; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; font-size: 2rem;">☁️</div>
+                    <h3 class="text-xl font-semibold text-gray-900 mb-4">部署灵活</h3>
+                    <p class="text-gray-600">支持云端SaaS和私有化部署</p>
+                </div>
+                <div class="text-center">
+                    <div style="width: 5rem; height: 5rem; background: #fef3c7; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; font-size: 2rem;">🎯</div>
+                    <h3 class="text-xl font-semibold text-gray-900 mb-4">开源免费</h3>
+                    <p class="text-gray-600">完全开源，无隐藏费用，社区驱动发展</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Roadmap Section -->
+    <section id="roadmap" class="py-20 bg-white">
+        <div class="container">
+            <div class="text-center mb-16">
+                <h2 class="text-4xl font-bold text-gray-900 mb-4">产品路线图</h2>
+                <p class="text-xl text-gray-600">持续迭代，不断完善</p>
+            </div>
+            <div class="roadmap">
+                <div class="roadmap-item">
+                    <div class="roadmap-content" style="margin-right: 1rem;">
+                        <h3 class="text-xl font-semibold text-blue-900 mb-4">v1.0 - MVP (当前版本)</h3>
+                        <p class="text-blue-700 mb-4">基础智能客服功能，突出远程协助优势</p>
+                        <ul style="color: #2563eb; list-style: none;">
+                            <li>✅ 基础WebRTC通信</li>
+                            <li>✅ AI智能问答</li>
+                            <li>✅ 远程协助功能</li>
+                            <li>✅ 基础知识库</li>
+                        </ul>
+                    </div>
+                    <div class="roadmap-icon">🚀</div>
+                    <div style="flex: 1;"></div>
+                </div>
+                
+                <div class="roadmap-item">
+                    <div style="flex: 1;"></div>
+                    <div class="roadmap-icon inactive">⚙️</div>
+                    <div class="roadmap-content" style="margin-left: 1rem;">
+                        <h3 class="text-xl font-semibold text-gray-900 mb-4">v1.1 - 核心增强</h3>
+                        <p class="text-gray-700 mb-4">补充客服系统核心功能</p>
+                        <ul style="color: #4b5563; list-style: none;">
+                            <li>🔄 工单管理系统</li>
+                            <li>🔄 客户管理(CRM)</li>
+                            <li>🔄 人工客服接入</li>
+                            <li>🔄 会话转接</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="roadmap-item">
+                    <div class="roadmap-content" style="margin-right: 1rem;">
+                        <h3 class="text-xl font-semibold text-gray-900 mb-4">v1.2 - 数据智能</h3>
+                        <p class="text-gray-700 mb-4">增强分析能力，提供商业洞察</p>
+                        <ul style="color: #4b5563; list-style: none;">
+                            <li>📊 数据分析面板</li>
+                            <li>📈 AI效果分析</li>
+                            <li>⚡ 自动化流程</li>
+                            <li>📋 报表系统</li>
+                        </ul>
+                    </div>
+                    <div class="roadmap-icon inactive">📊</div>
+                    <div style="flex: 1;"></div>
+                </div>
+                
+                <div class="roadmap-item">
+                    <div style="flex: 1;"></div>
+                    <div class="roadmap-icon inactive">👑</div>
+                    <div class="roadmap-content" style="margin-left: 1rem;">
+                        <h3 class="text-xl font-semibold text-gray-900 mb-4">v2.0 - 企业级</h3>
+                        <p class="text-gray-700 mb-4">企业级功能，支持大规模部署</p>
+                        <ul style="color: #4b5563; list-style: none;">
+                            <li>🏢 多租户管理</li>
+                            <li>🔗 API开放平台</li>
+                            <li>🔒 企业级安全</li>
+                            <li>☁️ 高可用架构</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Tech Stack Section -->
+    <section class="py-20 bg-gray-50">
+        <div class="container">
+            <div class="text-center mb-16">
+                <h2 class="text-4xl font-bold text-gray-900 mb-4">技术栈</h2>
+                <p class="text-xl text-gray-600">现代化的技术架构</p>
+            </div>
+            <div class="grid grid-cols-2 grid-md-4 gap-8">
+                <div class="text-center">
+                    <div style="width: 5rem; height: 5rem; background: #dbeafe; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; font-size: 2rem;">🐹</div>
+                    <h3 class="font-semibold text-gray-900">Go</h3>
+                    <p style="font-size: 0.875rem; color: #4b5563;">后端服务</p>
+                </div>
+                <div class="text-center">
+                    <div style="width: 5rem; height: 5rem; background: #d1fae5; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; font-size: 2rem;">📜</div>
+                    <h3 class="font-semibold text-gray-900">TypeScript</h3>
+                    <p style="font-size: 0.875rem; color: #4b5563;">前端SDK</p>
+                </div>
+                <div class="text-center">
+                    <div style="width: 5rem; height: 5rem; background: #e9d5ff; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; font-size: 2rem;">🗄️</div>
+                    <h3 class="font-semibold text-gray-900">PostgreSQL</h3>
+                    <p style="font-size: 0.875rem; color: #4b5563;">数据存储</p>
+                </div>
+                <div class="text-center">
+                    <div style="width: 5rem; height: 5rem; background: #fecaca; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; font-size: 2rem;">💾</div>
+                    <h3 class="font-semibold text-gray-900">Redis</h3>
+                    <p style="font-size: 0.875rem; color: #4b5563;">缓存系统</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="py-20 gradient-bg">
+        <div class="container text-center">
+            <h2 class="text-4xl font-bold text-white mb-4">准备开始了吗？</h2>
+            <p class="text-xl text-white mb-8" style="opacity: 0.9;">
+                现在就体验下一代智能客服系统，完全免费开源
+            </p>
+            <div class="hero-buttons">
+                <a href="https://github.com/your-org/servify" target="_blank" class="btn btn-primary" style="background: white; color: #2563eb;">
+                    🐙 获取源码
+                </a>
+                <a href="mailto:support@servify.cloud" class="btn btn-secondary">
+                    ✉️ 联系我们
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer id="contact">
+        <div class="container">
+            <div class="grid grid-cols-1 grid-md-4 gap-8">
+                <div>
+                    <div class="logo mb-4" style="color: white;">Servify</div>
+                    <p style="color: #9ca3af; margin-bottom: 1rem;">下一代智能客服系统</p>
+                    <div style="display: flex; gap: 1rem;">
+                        <a href="https://github.com/your-org/servify" target="_blank" style="font-size: 1.25rem;">🐙</a>
+                        <a href="#" style="font-size: 1.25rem;">🐦</a>
+                        <a href="#" style="font-size: 1.25rem;">💼</a>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="font-semibold mb-4" style="color: white;">产品</h3>
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                        <a href="#features">功能特点</a>
+                        <a href="#roadmap">路线图</a>
+                        <a href="https://github.com/your-org/servify" target="_blank">文档</a>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="font-semibold mb-4" style="color: white;">开发者</h3>
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                        <a href="https://github.com/your-org/servify" target="_blank">GitHub</a>
+                        <a href="#">API文档</a>
+                        <a href="#">SDK下载</a>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="font-semibold mb-4" style="color: white;">联系我们</h3>
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem; color: #9ca3af;">
+                        <div>✉️ support@servify.cloud</div>
+                        <div>🌐 servify.cloud</div>
+                        <div>🐙 github.com/your-org/servify</div>
+                    </div>
+                </div>
+            </div>
+            <div style="border-top: 1px solid #374151; margin-top: 2rem; padding-top: 2rem; text-align: center; color: #9ca3af;">
+                <p>&copy; 2024 Servify. All rights reserved. | MIT License</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Smooth scrolling script -->
+    <script>
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth'
+                    });
+                }
+            });
+        });
+
+        // Add scroll effect to navbar
+        window.addEventListener('scroll', function() {
+            const nav = document.querySelector('nav');
+            if (window.scrollY > 50) {
+                nav.style.backgroundColor = 'rgba(255, 255, 255, 0.95)';
+                nav.style.backdropFilter = 'blur(10px)';
+            } else {
+                nav.style.backgroundColor = 'white';
+                nav.style.backdropFilter = 'none';
+            }
+        });
+    </script>
+</body>
+</html>

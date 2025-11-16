@@ -12,7 +12,7 @@
 
 ## 一、Admin Dashboard功能分析
 
-### 1.1 前端界面实现 (`/Users/cui/Workspaces/servify/web/admin/`)
+### 1.1 前端界面实现 (`apps/demo-web/admin/`)
 
 **文件结构：**
 - `index.html` - 仪表板HTML模板（127行）
@@ -627,4 +627,3 @@ GET    /api/statistics/category               获取工单分类统计
 GET    /api/statistics/priority               获取优先级统计
 GET    /api/statistics/customer-source        获取客户来源统计
 ```
-

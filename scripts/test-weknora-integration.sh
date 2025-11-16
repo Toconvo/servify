@@ -283,3 +283,125 @@ fi
 
 echo ""
 echo "✨ WeKnora 集成测试完成！"
+echo ""
+echo "🛡️ 进行基础鉴权测试（管理类 API）..."
+
+# helper: base64url without padding
+base64url() {
+  openssl base64 -A | tr '+/' '-_' | tr -d '='
+}
+
+# Generate HS256 JWT with default secret (must match server config/jwt.secret)
+issue_jwt() {
+  local secret="${1:-default-secret-key}"
+  local uid="${2:-1}"
+  local roles="${3:-[\"admin\"]}"
+  local now=$(date +%s)
+  local exp=$((now + 3600))
+  local header='{"alg":"HS256","typ":"JWT"}'
+  local payload=$(printf '{"user_id":%s,"roles":%s,"iat":%s,"exp":%s}' "$uid" "$roles" "$now" "$exp")
+  local b64_header=$(printf '%s' "$header" | base64url)
+  local b64_payload=$(printf '%s' "$payload" | base64url)
+  local signing_input="${b64_header}.${b64_payload}"
+  local sig=$(printf '%s' "$signing_input" | openssl dgst -sha256 -mac HMAC -macopt "key:$secret" -binary | base64url)
+  printf '%s.%s' "$signing_input" "$sig"
+}
+
+AUTH_TOKEN=$(issue_jwt "default-secret-key" "1" "[\"admin\"]")
+
+echo "  ✓ 无 token 访问应被拒绝..."
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$SERVIFY_URL/api/customers/stats" || true)
+if [ "$HTTP_CODE" != "401" ] && [ "$HTTP_CODE" != "403" ]; then
+  echo "    ❌ 期望 401/403，得到 $HTTP_CODE"
+  echo "    🔎 返回详情："
+  curl -s -i "$SERVIFY_URL/api/customers/stats" || true
+  exit 1
+else
+  echo "    ✅ 未授权访问被拒绝 ($HTTP_CODE)"
+fi
+
+echo "  ✓ 携带有效 token 访问应成功..."
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $AUTH_TOKEN" "$SERVIFY_URL/api/customers/stats" || true)
+if [ "$HTTP_CODE" = "200" ]; then
+  echo "    ✅ 授权访问成功 (200)"
+else
+  echo "    ❌ 授权访问失败，HTTP $HTTP_CODE"
+  echo "    🔎 返回详情："
+  curl -s -i -H "Authorization: Bearer $AUTH_TOKEN" "$SERVIFY_URL/api/customers/stats" || true
+  exit 1
+fi
+
+echo "✅ 鉴权测试完成"
+
+echo ""
+echo "🛡️ 管理员专属接口测试（/api/statistics/...）..."
+
+# 仅 agent 角色访问 admin-only 接口应 403
+AGENT_TOKEN=$(issue_jwt "default-secret-key" "2" "[\"agent\"]")
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $AGENT_TOKEN" "$SERVIFY_URL/api/statistics/dashboard" || true)
+if [ "$HTTP_CODE" = "403" ]; then
+  echo "    ✅ agent 访问 admin-only 接口被拒绝 (403)"
+else
+  echo "    ❌ 期望 403，得到 $HTTP_CODE"
+  echo "    🔎 返回详情："
+  curl -s -i -H "Authorization: Bearer $AGENT_TOKEN" "$SERVIFY_URL/api/statistics/dashboard" || true
+  exit 1
+fi
+
+# admin 访问应 200
+ADMIN_TOKEN=$(issue_jwt "default-secret-key" "1" "[\"admin\"]")
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $ADMIN_TOKEN" "$SERVIFY_URL/api/statistics/dashboard" || true)
+if [ "$HTTP_CODE" = "200" ]; then
+  echo "    ✅ admin 访问 admin-only 接口成功 (200)"
+else
+  echo "    ❌ 访问失败，HTTP $HTTP_CODE"
+  echo "    🔎 返回详情："
+  curl -s -i -H "Authorization: Bearer $ADMIN_TOKEN" "$SERVIFY_URL/api/statistics/dashboard" || true
+  exit 1
+fi
+
+echo "✅ 管理员专属接口测试完成"
+
+echo ""
+echo "🚦 速率限制测试（/api/v1/ai/query）..."
+R200=0
+R429=0
+TOTAL=50
+for i in $(seq 1 "$TOTAL"); do
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$SERVIFY_URL/api/v1/ai/query" \
+    -H "Content-Type: application/json" \
+    -d "{\"query\":\"rl_test_$i\",\"session_id\":\"rl_test_session\"}" || true)
+  if [ "$CODE" = "200" ]; then R200=$((R200+1)); fi
+  if [ "$CODE" = "429" ]; then R429=$((R429+1)); fi
+done
+echo "    ↳ 成功: $R200, 限流: $R429, 总计: $TOTAL"
+if [ "$R429" -gt 0 ]; then
+  echo "    ✅ 触发限流成功（检测到 429）"
+else
+  echo "    ❌ 未触发限流，请检查 security.rate_limiting 配置或中间件挂载"
+  echo "    🔎 样例请求详情："
+  curl -s -i -X POST "$SERVIFY_URL/api/v1/ai/query" \
+    -H "Content-Type: application/json" \
+    -d '{"query":"probe","session_id":"rl_probe"}' || true
+  exit 1
+fi
+
+echo ""
+echo "🚦 限流白名单（X-API-Key）测试..."
+R200=0
+R429=0
+for i in $(seq 1 "$TOTAL"); do
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$SERVIFY_URL/api/v1/ai/query" \
+    -H "Content-Type: application/json" \
+    -H "X-API-Key: internal-test-key" \
+    -d "{\"query\":\"wl_test_$i\",\"session_id\":\"rl_test_session\"}" || true)
+  if [ "$CODE" = "200" ]; then R200=$((R200+1)); fi
+  if [ "$CODE" = "429" ]; then R429=$((R429+1)); fi
+done
+echo "    ↳ (白名单) 成功: $R200, 限流: $R429, 总计: $TOTAL"
+if [ "$R429" -eq 0 ]; then
+  echo "    ✅ 白名单跳过限流生效"
+else
+  echo "    ❌ 白名单无效，请检查 key_header 与 whitelist_keys 配置"
+  exit 1
+fi

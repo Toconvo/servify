@@ -36,8 +36,13 @@
 
 ### Docker Compose（WeKnora）
 
-- `docker-compose -f docker-compose.yml -f docker-compose.weknora.yml up -d`
+- `docker-compose -f infra/compose/docker-compose.yml -f infra/compose/docker-compose.weknora.yml up -d`
 - 将 `config.weknora.yml` 挂载为容器内默认配置，并通过 `DB_*`/`SERVIFY_*` 覆盖运行参数
+
+### 同步 SDK 到 Demo
+- 构建并同步最新 SDK 产物到 `apps/demo-web/sdk/`：
+  - `make demo-sync-sdk`
+  - 或直接运行脚本：`./scripts/sync-sdk-to-demo.sh`
 
 ### 可观测性（OpenTelemetry）
 
@@ -59,7 +64,7 @@ monitoring:
 ### 验收清单（Smoke Test）
 
 1) 启动（本地或 Compose）
-- 本地：`make run-cli CONFIG=./config.weknora.yml` 或 `go run cmd/server/main.go --host=0.0.0.0 --port=8080`
+- 本地：`make run-cli CONFIG=./config.weknora.yml` 或 `go run ./apps/server/cmd/server --host=0.0.0.0 --port=8080`
 - Compose：`make docker-up-weknora`
 
 2) 健康检查
@@ -98,9 +103,63 @@ curl -s http://localhost:8080/api/v1/webrtc/connections | jq
 ### 管理后台（MVP）
 - 打开: http://localhost:8080/admin/
 - 功能：仪表板（平台接入、在线客服统计）、工单列表/创建、客户列表/创建、AI 状态与测试
-- 说明：管理类 API 由 `cmd/server` 提供，建议使用：
-  - `go run cmd/server/main.go --host=0.0.0.0 --port=8080`（或 `make run-cli` 的增强版本若已接入）
+- 说明：管理类 API 由 `apps/server` 提供，建议使用：
+  - `go run ./apps/server/cmd/server --host=0.0.0.0 --port=8080`（或 `make run-cli` 的增强版本若已接入）
   - 首次使用请配置数据库并执行迁移（见上文 migrate）
+ - 权限提示：
+   - staff（admin/agent）：customers、agents、tickets、session-transfer、satisfaction
+   - admin-only：statistics（/api/statistics/...）、sla（/api/sla/...）
+
+### 接口鉴权（JWT）
+- 管理类接口（`/api/**`）默认启用 JWT 鉴权（HS256）：
+  - 请求头：`Authorization: Bearer <token>`
+  - 服务端密钥：`config.yml` 中 `jwt.secret`
+  - 过期校验：支持 `exp/nbf/iat`（可选）
+  - 上下文注入：`user_id`（若 token 携带 `user_id` 或 `sub`），`roles`（若存在）
+- 角色控制：默认要求 `admin` 或 `agent` 角色
+- 开发调试
+  - 可在 `config.yml` 设置 `jwt.secret`，自行签发 token（HS256）
+  - 示例 payload：`{"user_id":1,"roles":["admin"],"exp":<unix_ts>}`
+  - 使用任意在线工具或脚本生成 HS256 JWT 并测试
+  - 或使用 CLI 生成：
+    - 构建 CLI：`make build-cli`
+    - 生成 token：`./bin/servify-cli token --user-id 1 --roles admin,agent --ttl 120`
+  - 解析/验证 token：
+    - `./bin/servify-cli token-decode --token <JWT>`
+    - 验证签名与时间：`./bin/servify-cli token-decode --token <JWT> --verify`（默认使用配置中的 `jwt.secret`，也可 `--secret <key>`）
+
+### 速率限制（Rate Limiting）
+- 默认启用每 IP 令牌桶限流，支持“按路径前缀”覆盖：
+  - 配置项：`security.rate_limiting`（requests_per_minute、burst）
+  - 按路径覆盖：`security.rate_limiting.paths`（prefix、requests_per_minute、burst、enabled）
+  - Key 选择：`security.rate_limiting.key_header`（如 `X-API-Key`、`X-Forwarded-For`）
+  - 白名单：`security.rate_limiting.whitelist_ips`、`security.rate_limiting.whitelist_keys`
+  - 匹配策略：按配置顺序首个前缀匹配命中；未命中走全局值
+  - 返回码：超过限额时返回 `429 Too Many Requests`
+  - 示例：
+```yaml
+security:
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 60
+    burst: 10
+    key_header: "X-API-Key"
+    whitelist_ips: ["127.0.0.1"]
+    whitelist_keys: ["internal-test-key"]
+    paths:
+      - enabled: true
+        prefix: "/api/v1/ai/query"
+        requests_per_minute: 30
+        burst: 10
+      - enabled: true
+        prefix: "/api/v1/metrics/ingest"
+        requests_per_minute: 120
+        burst: 30
+      - enabled: true
+        prefix: "/api/"
+        requests_per_minute: 60
+        burst: 15
+```
 
 ## 系统概述
 
@@ -313,7 +372,7 @@ monitoring:
 
 | 指标名 | 类型 | 标签 | 说明 |
 |---|---|---|---|
-| `servify_info` | gauge | `version` | 实例信息 |
+| `servify_info` | gauge | `version`,`commit`,`build_time` | 实例信息 |
 | `servify_uptime_seconds` | counter |  | 运行时长 |
 | `servify_websocket_active_connections` | gauge |  | 活跃 WS 连接数（Agent/Client 总计） |
 | `servify_webrtc_connections` | gauge |  | 活跃 WebRTC PeerConnection 数量 |
@@ -321,6 +380,18 @@ monitoring:
 | `servify_ai_weknora_usage_total` | counter |  | 走 WeKnora 的查询次数 |
 | `servify_ai_fallback_usage_total` | counter |  | 走本地/降级 KB 的查询次数 |
 | `servify_ai_avg_latency_seconds` | gauge |  | AI 平均耗时（秒） |
+| `servify_ratelimit_dropped_total` | counter | `prefix` | 各前缀触发的 429 次数 |
+| `servify_ratelimit_dropped_sum` | counter |  | 429 总次数 |
+| `servify_go_goroutines` | gauge |  | goroutine 数 |
+| `servify_go_mem_alloc_bytes` | gauge |  | 已分配内存（字节） |
+| `servify_db_max_open_connections` | gauge |  | DB 最大连接数 |
+| `servify_db_open_connections` | gauge |  | DB 当前打开连接数 |
+| `servify_db_inuse_connections` | gauge |  | DB 正在使用连接数 |
+| `servify_db_idle_connections` | gauge |  | DB 空闲连接数 |
+| `servify_db_wait_count` | counter |  | DB 等待连接次数 |
+| `servify_db_wait_duration_seconds` | counter |  | DB 等待总时长（秒） |
+| `servify_db_max_idle_closed_total` | counter |  | DB 因空闲上限关闭次数 |
+| `servify_db_max_lifetime_closed_total` | counter |  | DB 因生命周期关闭次数 |
 
 建议扩展（前端 SDK/后台/坐席上报并在后端聚合导出）：
 
@@ -592,7 +663,7 @@ make migrate-seed
 make run
 
 # 或者直接使用 go run
-go run cmd/server/main.go
+go run ./apps/server/cmd/server
 ```
 
 ### 使用 Makefile 命令

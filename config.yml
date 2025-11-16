@@ -33,3 +33,30 @@ log:
   maxage: 7
   maxbackups: 3
   compress: true
+
+security:
+  cors:
+    enabled: true
+    allowed_origins: ["*"]
+    allowed_methods: ["GET","POST","PUT","DELETE"]
+    allowed_headers: ["*"]
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 60
+    burst: 10
+    key_header: ""          # e.g. "X-API-Key" or "X-Forwarded-For"
+    whitelist_ips: []
+    whitelist_keys: []
+    paths:
+      - enabled: true
+        prefix: "/api/v1/ai/query"
+        requests_per_minute: 30
+        burst: 10
+      - enabled: true
+        prefix: "/api/v1/metrics/ingest"
+        requests_per_minute: 120
+        burst: 30
+      - enabled: true
+        prefix: "/api/"
+        requests_per_minute: 60
+        burst: 15

@@ -72,7 +72,7 @@ if [ "$ENV" = "dev" ]; then
 
     # 启动 WeKnora 服务
     echo "🧠 启动 WeKnora 知识库服务..."
-    docker-compose -f docker-compose.yml -f docker-compose.weknora.yml up -d weknora
+    docker-compose -f infra/compose/docker-compose.yml -f infra/compose/docker-compose.weknora.yml up -d weknora
 
     # 等待 WeKnora 启动
     echo "⏳ 等待 WeKnora 服务启动..."
@@ -86,7 +86,7 @@ if [ "$ENV" = "dev" ]; then
 
     # 启动主服务
     echo "🚀 启动 Servify 主服务..."
-    docker-compose -f docker-compose.yml -f docker-compose.weknora.yml up -d servify
+    docker-compose -f infra/compose/docker-compose.yml -f infra/compose/docker-compose.weknora.yml up -d servify
 
     # 可选服务提示
     echo ""
@@ -98,7 +98,7 @@ else
     echo "🏭 启动生产环境..."
 
     # 生产环境启动所有服务
-    docker-compose -f docker-compose.yml -f docker-compose.weknora.yml up -d
+    docker-compose -f infra/compose/docker-compose.yml -f infra/compose/docker-compose.weknora.yml up -d
 fi
 
 # 健康检查

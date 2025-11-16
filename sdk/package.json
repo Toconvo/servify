@@ -1,0 +1,43 @@
+{
+  "name": "@servify/sdk",
+  "version": "1.0.0",
+  "description": "Servify Customer Support SDK for web applications",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build:core && npm run build:react && npm run build:vue && npm run build:vanilla",
+    "build:core": "cd packages/core && npm run build",
+    "build:react": "cd packages/react && npm run build",
+    "build:vue": "cd packages/vue && npm run build",
+    "build:vanilla": "cd packages/vanilla && npm run build",
+    "dev": "npm run dev:core",
+    "dev:core": "cd packages/core && npm run dev",
+    "test": "npm run test:core",
+    "test:core": "cd packages/core && npm test",
+    "lint": "eslint packages/*/src/**/*.{js,ts,tsx}",
+    "clean": "rm -rf packages/*/dist"
+  },
+  "keywords": [
+    "customer-support",
+    "chat",
+    "sdk",
+    "websocket",
+    "servify"
+  ],
+  "author": "Servify Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0",
+    "vitest": "^1.0.0"
+  }
+}
