@@ -28,7 +28,7 @@ jobs:
             sdk/packages/*/package-lock.json
 
       - name: Install SDK deps
-        run: npm -C sdk ci
+        run: npm -C sdk install --no-audit --no-fund
 
       - name: Build SDK
         run: npm -C sdk run build
@@ -130,6 +130,9 @@ jobs:
           fi
         id: gate
 
+      - name: Checkout
+        if: steps.gate.outputs.skip == 'false'
+        uses: actions/checkout@v4
       - name: Detect website changes
         if: steps.gate.outputs.skip == 'false'
         id: detect
@@ -147,10 +150,6 @@ jobs:
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Checkout
-        if: steps.gate.outputs.skip == 'false' && steps.detect.outputs.changed == 'true'
-        uses: actions/checkout@v4
-
       - name: Setup Node
         if: steps.gate.outputs.skip == 'false' && steps.detect.outputs.changed == 'true'
         uses: actions/setup-node@v4
@@ -162,7 +161,7 @@ jobs:
 
       - name: Install worker deps
         if: steps.gate.outputs.skip == 'false' && steps.detect.outputs.changed == 'true'
-        run: npm -C apps/website-worker ci
+        run: npm -C apps/website-worker install --no-audit --no-fund
 
       - name: Deploy to Cloudflare Workers
         if: steps.gate.outputs.skip == 'false' && steps.detect.outputs.changed == 'true'
