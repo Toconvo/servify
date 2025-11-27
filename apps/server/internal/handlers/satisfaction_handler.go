@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -191,6 +192,104 @@ func (h *SatisfactionHandler) ListSatisfactions(c *gin.Context) {
 		Page:     req.Page,
 		PageSize: req.PageSize,
 	})
+}
+
+// ListSurveys 获取 CSAT 调查列表
+// @Summary 获取 CSAT 调查列表
+// @Description 查看调查发送状态、token 与完成情况
+// @Tags 满意度评价
+// @Produce json
+// @Param page query int false "页码" default(1)
+// @Param page_size query int false "每页数量" default(20)
+// @Param ticket_id query int false "工单ID筛选"
+// @Param customer_id query int false "客户ID筛选"
+// @Param status query []string false "状态筛选" collectionFormat(multi)
+// @Param channel query []string false "渠道筛选" collectionFormat(multi)
+// @Success 200 {object} PaginatedResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/satisfactions/surveys [get]
+func (h *SatisfactionHandler) ListSurveys(c *gin.Context) {
+	var req services.SatisfactionSurveyListRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid query parameters",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	surveys, total, err := h.satisfactionService.ListSurveys(c.Request.Context(), &req)
+	if err != nil {
+		h.logger.Errorf("Failed to list CSAT surveys: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Failed to list surveys",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	pages := 0
+	if req.PageSize > 0 {
+		pages = int((total + int64(req.PageSize) - 1) / int64(req.PageSize))
+	}
+
+	c.JSON(http.StatusOK, PaginatedResponse{
+		Data:     surveys,
+		Total:    total,
+		Page:     req.Page,
+		PageSize: req.PageSize,
+		Pages:    pages,
+	})
+}
+
+// ResendSurvey 重新发送 CSAT 调查
+// @Summary 重新发送 CSAT 调查
+// @Description 对指定调查重新生成链接与有效期
+// @Tags 满意度评价
+// @Param id path int true "调查ID"
+// @Success 200 {object} models.SatisfactionSurvey
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/satisfactions/surveys/{id}/resend [post]
+func (h *SatisfactionHandler) ResendSurvey(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid survey ID",
+			Message: "ID must be a positive integer",
+		})
+		return
+	}
+
+	survey, err := h.satisfactionService.ResendSurvey(c.Request.Context(), uint(id))
+	if err != nil {
+		switch {
+		case errors.Is(err, services.ErrSurveyNotFound):
+			c.JSON(http.StatusNotFound, ErrorResponse{
+				Error:   "Survey not found",
+				Message: err.Error(),
+			})
+			return
+		case errors.Is(err, services.ErrSurveyCompleted):
+			c.JSON(http.StatusBadRequest, ErrorResponse{
+				Error:   "Survey already completed",
+				Message: err.Error(),
+			})
+			return
+		default:
+			h.logger.Errorf("Failed to resend CSAT survey: %v", err)
+			c.JSON(http.StatusInternalServerError, ErrorResponse{
+				Error:   "Failed to resend survey",
+				Message: err.Error(),
+			})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, survey)
 }
 
 // GetSatisfactionByTicket 根据工单获取满意度评价
@@ -390,6 +489,8 @@ func RegisterSatisfactionRoutes(r *gin.RouterGroup, handler *SatisfactionHandler
 		satisfactions.POST("", handler.CreateSatisfaction)
 		satisfactions.GET("", handler.ListSatisfactions)
 		satisfactions.GET("/stats", handler.GetSatisfactionStats)
+		satisfactions.GET("/surveys", handler.ListSurveys)
+		satisfactions.POST("/surveys/:id/resend", handler.ResendSurvey)
 		satisfactions.GET("/:id", handler.GetSatisfaction)
 		satisfactions.PUT("/:id", handler.UpdateSatisfaction)
 		satisfactions.DELETE("/:id", handler.DeleteSatisfaction)

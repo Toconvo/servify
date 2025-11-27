@@ -13,20 +13,34 @@ import (
 
 // TicketService 工单管理服务
 type TicketService struct {
-	db     *gorm.DB
-	logger *logrus.Logger
+	db           *gorm.DB
+	logger       *logrus.Logger
+	slaService   *SLAService
+	automation   *AutomationService
+	satisfaction *SatisfactionService
 }
 
 // NewTicketService 创建工单服务
-func NewTicketService(db *gorm.DB, logger *logrus.Logger) *TicketService {
+func NewTicketService(db *gorm.DB, logger *logrus.Logger, slaService *SLAService) *TicketService {
 	if logger == nil {
 		logger = logrus.New()
 	}
 
 	return &TicketService{
-		db:     db,
-		logger: logger,
+		db:         db,
+		logger:     logger,
+		slaService: slaService,
 	}
+}
+
+// SetAutomationService 注入自动化服务
+func (s *TicketService) SetAutomationService(automation *AutomationService) {
+	s.automation = automation
+}
+
+// SetSatisfactionService 注入满意度服务
+func (s *TicketService) SetSatisfactionService(satisfaction *SatisfactionService) {
+	s.satisfaction = satisfaction
 }
 
 // TicketCreateRequest 创建工单请求
@@ -43,13 +57,13 @@ type TicketCreateRequest struct {
 
 // TicketUpdateRequest 更新工单请求
 type TicketUpdateRequest struct {
-	Title       *string `json:"title"`
-	Description *string `json:"description"`
-	AgentID     *uint   `json:"agent_id"`
-	Category    *string `json:"category"`
-	Priority    *string `json:"priority"`
-	Status      *string `json:"status"`
-	Tags        *string `json:"tags"`
+	Title       *string    `json:"title"`
+	Description *string    `json:"description"`
+	AgentID     *uint      `json:"agent_id"`
+	Category    *string    `json:"category"`
+	Priority    *string    `json:"priority"`
+	Status      *string    `json:"status"`
+	Tags        *string    `json:"tags"`
 	DueDate     *time.Time `json:"due_date"`
 }
 
@@ -116,8 +130,15 @@ func (s *TicketService) CreateTicket(ctx context.Context, req *TicketCreateReque
 
 	s.logger.Infof("Created ticket %d for customer %d", ticket.ID, req.CustomerID)
 
-	// 返回完整的工单信息
-	return s.GetTicketByID(ctx, ticket.ID)
+	createdTicket, err := s.GetTicketByID(ctx, ticket.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 初次检查 SLA（确保计时任务开始跟踪）
+	s.evaluateTicketSLA(ctx, createdTicket, false, false)
+
+	return createdTicket, nil
 }
 
 // GetTicketByID 根据ID获取工单
@@ -175,9 +196,11 @@ func (s *TicketService) UpdateTicket(ctx context.Context, ticketID uint, req *Ti
 		updates["due_date"] = *req.DueDate
 	}
 
+	statusChanged := false
 	// 处理状态变更
 	if req.Status != nil && *req.Status != oldTicket.Status {
 		updates["status"] = *req.Status
+		statusChanged = true
 
 		// 设置特殊状态的时间戳
 		switch *req.Status {
@@ -192,6 +215,12 @@ func (s *TicketService) UpdateTicket(ctx context.Context, ticketID uint, req *Ti
 		// 记录状态变更历史
 		s.recordStatusChange(ticketID, userID, oldTicket.Status, *req.Status, "状态更新")
 	}
+	agentChanged := false
+	if req.AgentID != nil {
+		if (oldTicket.AgentID == nil && *req.AgentID != 0) || (oldTicket.AgentID != nil && *oldTicket.AgentID != *req.AgentID) {
+			agentChanged = true
+		}
+	}
 
 	// 更新工单
 	if err := s.db.Model(&models.Ticket{}).Where("id = ?", ticketID).Updates(updates).Error; err != nil {
@@ -200,8 +229,15 @@ func (s *TicketService) UpdateTicket(ctx context.Context, ticketID uint, req *Ti
 
 	s.logger.Infof("Updated ticket %d by user %d", ticketID, userID)
 
-	// 返回更新后的工单
-	return s.GetTicketByID(ctx, ticketID)
+	updatedTicket, err := s.GetTicketByID(ctx, ticketID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 根据状态/指派变更触发 SLA 处理
+	s.evaluateTicketSLA(ctx, updatedTicket, statusChanged, agentChanged)
+
+	return updatedTicket, nil
 }
 
 // ListTickets 获取工单列表
@@ -288,6 +324,15 @@ func (s *TicketService) AssignTicket(ctx context.Context, ticketID uint, agentID
 
 	s.logger.Infof("Assigned ticket %d to agent %d", ticketID, agentID)
 
+	// 分配后标记首次响应 SLA
+	ticket, err := s.GetTicketByID(ctx, ticketID)
+	if err == nil {
+		s.resolveTicketSLAViolations(ctx, ticket.ID, []string{"first_response"})
+		s.evaluateTicketSLA(ctx, ticket, false, true)
+	} else {
+		s.logger.Warnf("Failed to fetch ticket %d after assignment for SLA evaluation: %v", ticketID, err)
+	}
+
 	return nil
 }
 
@@ -298,10 +343,10 @@ func (s *TicketService) AddComment(ctx context.Context, ticketID uint, userID ui
 	}
 
 	comment := &models.TicketComment{
-		TicketID:  ticketID,
-		UserID:    userID,
-		Content:   content,
-		Type:      commentType,
+		TicketID: ticketID,
+		UserID:   userID,
+		Content:  content,
+		Type:     commentType,
 	}
 
 	if err := s.db.Create(comment).Error; err != nil {
@@ -348,7 +393,17 @@ func (s *TicketService) CloseTicket(ctx context.Context, ticketID uint, userID u
 	// 添加系统评论
 	s.AddComment(ctx, ticketID, userID, fmt.Sprintf("工单已关闭。原因：%s", reason), "system")
 
+	// 解决类型 SLA 违约
+	s.resolveTicketSLAViolations(ctx, ticketID, []string{"resolution"})
+
 	s.logger.Infof("Closed ticket %d by user %d", ticketID, userID)
+
+	// 触发 CSAT 调查
+	if s.satisfaction != nil {
+		if _, err := s.satisfaction.ScheduleSurvey(ctx, ticket); err != nil {
+			s.logger.Warnf("Failed to schedule CSAT survey for ticket %d: %v", ticketID, err)
+		}
+	}
 
 	return nil
 }
@@ -386,6 +441,42 @@ func (s *TicketService) recordStatusChange(ticketID uint, userID uint, fromStatu
 
 	if err := s.db.Create(statusChange).Error; err != nil {
 		s.logger.Errorf("Failed to record status change for ticket %d: %v", ticketID, err)
+	}
+}
+
+// evaluateTicketSLA 根据最新工单状态检查/处理SLA
+func (s *TicketService) evaluateTicketSLA(ctx context.Context, ticket *models.Ticket, statusChanged, agentChanged bool) {
+	if s.slaService == nil || ticket == nil {
+		return
+	}
+
+	// 状态流转到 resolved/closed 时，标记解决超时
+	if statusChanged && (ticket.Status == "resolved" || ticket.Status == "closed") {
+		if err := s.slaService.ResolveViolationsByTicket(ctx, ticket.ID, []string{"resolution"}); err != nil {
+			s.logger.Warnf("Failed to resolve SLA resolution violations for ticket %d: %v", ticket.ID, err)
+		}
+	}
+
+	// 分配客服后，标记首次响应违约
+	if agentChanged && ticket.AgentID != nil {
+		if err := s.slaService.ResolveViolationsByTicket(ctx, ticket.ID, []string{"first_response"}); err != nil {
+			s.logger.Warnf("Failed to resolve SLA first response violations for ticket %d: %v", ticket.ID, err)
+		}
+	}
+
+	// 主动检查当前工单是否触发新的违约
+	if _, err := s.slaService.CheckSLAViolation(ctx, ticket); err != nil {
+		s.logger.Warnf("Failed to evaluate SLA violation for ticket %d: %v", ticket.ID, err)
+	}
+}
+
+// resolveTicketSLAViolations 包装方法
+func (s *TicketService) resolveTicketSLAViolations(ctx context.Context, ticketID uint, types []string) {
+	if s.slaService == nil {
+		return
+	}
+	if err := s.slaService.ResolveViolationsByTicket(ctx, ticketID, types); err != nil {
+		s.logger.Warnf("Failed to resolve SLA violations for ticket %d: %v", ticketID, err)
 	}
 }
 
@@ -434,12 +525,12 @@ func (s *TicketService) GetTicketStats(ctx context.Context, agentID *uint) (*Tic
 
 // TicketStats 工单统计信息
 type TicketStats struct {
-	Total        int64                    `json:"total"`
-	TodayCreated int64                    `json:"today_created"`
-	Pending      int64                    `json:"pending"`
-	Resolved     int64                    `json:"resolved"`
-	ByStatus     []StatusCount            `json:"by_status"`
-	ByPriority   []PriorityCount          `json:"by_priority"`
+	Total        int64           `json:"total"`
+	TodayCreated int64           `json:"today_created"`
+	Pending      int64           `json:"pending"`
+	Resolved     int64           `json:"resolved"`
+	ByStatus     []StatusCount   `json:"by_status"`
+	ByPriority   []PriorityCount `json:"by_priority"`
 }
 
 type StatusCount struct {

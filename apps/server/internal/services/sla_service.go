@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"servify/apps/server/internal/models"
@@ -16,9 +17,10 @@ import (
 
 // SLAService SLA配置和监控服务
 type SLAService struct {
-	db     *gorm.DB
-	logger *logrus.Logger
-	tracer trace.Tracer
+	db         *gorm.DB
+	logger     *logrus.Logger
+	tracer     trace.Tracer
+	automation *AutomationService
 }
 
 // NewSLAService 创建SLA服务
@@ -34,62 +36,75 @@ func NewSLAService(db *gorm.DB, logger *logrus.Logger) *SLAService {
 	}
 }
 
+// SetAutomationService 注入自动化服务，用于在违约时触发规则
+func (s *SLAService) SetAutomationService(automation *AutomationService) {
+	s.automation = automation
+}
+
 // SLAConfigCreateRequest 创建SLA配置请求
 type SLAConfigCreateRequest struct {
-	Name               string `json:"name" binding:"required"`
-	Priority           string `json:"priority" binding:"required"` // low, normal, high, urgent
-	FirstResponseTime  int    `json:"first_response_time" binding:"required,min=1"` // 分钟
-	ResolutionTime     int    `json:"resolution_time" binding:"required,min=1"`     // 分钟
-	EscalationTime     int    `json:"escalation_time" binding:"required,min=1"`     // 分钟
-	BusinessHoursOnly  bool   `json:"business_hours_only"`
-	Active             *bool  `json:"active"`
+	Name              string   `json:"name" binding:"required"`
+	Priority          string   `json:"priority" binding:"required"`                          // low, normal, high, urgent
+	CustomerTier      string   `json:"customer_tier"`                                        // 针对特定客户级别（可选）
+	Tags              []string `json:"tags"`                                                 // 标签条件
+	WarningThreshold  *int     `json:"warning_threshold" binding:"omitempty,min=50,max=100"` // 触发预警的百分比，默认80
+	FirstResponseTime int      `json:"first_response_time" binding:"required,min=1"`         // 分钟
+	ResolutionTime    int      `json:"resolution_time" binding:"required,min=1"`             // 分钟
+	EscalationTime    int      `json:"escalation_time" binding:"required,min=1"`             // 分钟
+	BusinessHoursOnly bool     `json:"business_hours_only"`
+	Active            *bool    `json:"active"`
 }
 
 // SLAConfigUpdateRequest 更新SLA配置请求
 type SLAConfigUpdateRequest struct {
-	Name               *string `json:"name"`
-	Priority           *string `json:"priority"`
-	FirstResponseTime  *int    `json:"first_response_time"`
-	ResolutionTime     *int    `json:"resolution_time"`
-	EscalationTime     *int    `json:"escalation_time"`
-	BusinessHoursOnly  *bool   `json:"business_hours_only"`
-	Active             *bool   `json:"active"`
+	Name              *string  `json:"name"`
+	Priority          *string  `json:"priority"`
+	CustomerTier      *string  `json:"customer_tier"`
+	Tags              []string `json:"tags"`
+	WarningThreshold  *int     `json:"warning_threshold" binding:"omitempty,min=50,max=100"`
+	FirstResponseTime *int     `json:"first_response_time"`
+	ResolutionTime    *int     `json:"resolution_time"`
+	EscalationTime    *int     `json:"escalation_time"`
+	BusinessHoursOnly *bool    `json:"business_hours_only"`
+	Active            *bool    `json:"active"`
 }
 
 // SLAConfigListRequest SLA配置列表请求
 type SLAConfigListRequest struct {
-	Page      int      `form:"page,default=1"`
-	PageSize  int      `form:"page_size,default=20"`
-	Priority  []string `form:"priority"`
-	Active    *bool    `form:"active"`
-	SortBy    string   `form:"sort_by,default=created_at"`
-	SortOrder string   `form:"sort_order,default=desc"`
+	Page         int      `form:"page,default=1"`
+	PageSize     int      `form:"page_size,default=20"`
+	Priority     []string `form:"priority"`
+	CustomerTier []string `form:"customer_tier"`
+	Active       *bool    `form:"active"`
+	SortBy       string   `form:"sort_by,default=created_at"`
+	SortOrder    string   `form:"sort_order,default=desc"`
 }
 
 // SLAViolationListRequest SLA违约列表请求
 type SLAViolationListRequest struct {
-	Page          int       `form:"page,default=1"`
-	PageSize      int       `form:"page_size,default=20"`
-	TicketID      *uint     `form:"ticket_id"`
-	SLAConfigID   *uint     `form:"sla_config_id"`
-	ViolationType []string  `form:"violation_type"`
-	Resolved      *bool     `form:"resolved"`
+	Page          int        `form:"page,default=1"`
+	PageSize      int        `form:"page_size,default=20"`
+	TicketID      *uint      `form:"ticket_id"`
+	SLAConfigID   *uint      `form:"sla_config_id"`
+	ViolationType []string   `form:"violation_type"`
+	Resolved      *bool      `form:"resolved"`
 	DateFrom      *time.Time `form:"date_from"`
 	DateTo        *time.Time `form:"date_to"`
-	SortBy        string    `form:"sort_by,default=created_at"`
-	SortOrder     string    `form:"sort_order,default=desc"`
+	SortBy        string     `form:"sort_by,default=created_at"`
+	SortOrder     string     `form:"sort_order,default=desc"`
 }
 
 // SLAStatsResponse SLA统计响应
 type SLAStatsResponse struct {
-	TotalConfigs         int                        `json:"total_configs"`
-	ActiveConfigs        int                        `json:"active_configs"`
-	TotalViolations      int                        `json:"total_violations"`
-	UnresolvedViolations int                        `json:"unresolved_violations"`
-	ViolationsByType     map[string]int             `json:"violations_by_type"`
-	ViolationsByPriority map[string]int             `json:"violations_by_priority"`
-	ComplianceRate       float64                    `json:"compliance_rate"` // 合规率
-	TrendData            []SLAComplianceTrend       `json:"trend_data"`
+	TotalConfigs         int                  `json:"total_configs"`
+	ActiveConfigs        int                  `json:"active_configs"`
+	TotalViolations      int                  `json:"total_violations"`
+	UnresolvedViolations int                  `json:"unresolved_violations"`
+	ViolationsByType     map[string]int       `json:"violations_by_type"`
+	ViolationsByPriority map[string]int       `json:"violations_by_priority"`
+	ViolationsByTier     map[string]int       `json:"violations_by_tier"`
+	ComplianceRate       float64              `json:"compliance_rate"` // 合规率
+	TrendData            []SLAComplianceTrend `json:"trend_data"`
 }
 
 // SLAComplianceTrend SLA合规趋势
@@ -98,6 +113,7 @@ type SLAComplianceTrend struct {
 	TotalTickets   int     `json:"total_tickets"`
 	Violations     int     `json:"violations"`
 	ComplianceRate float64 `json:"compliance_rate"`
+	Tier           string  `json:"tier,omitempty"`
 }
 
 // CreateSLAConfig 创建SLA配置
@@ -127,10 +143,13 @@ func (s *SLAService) CreateSLAConfig(ctx context.Context, req *SLAConfigCreateRe
 		return nil, fmt.Errorf("escalation time must be less than resolution time")
 	}
 
-	// 检查同一优先级是否已有配置
+	tier := normalizeTier(req.CustomerTier)
+	warning := defaultWarning(req.WarningThreshold)
+
+	// 检查相同优先级 + 客户级别是否已有配置
 	var existingConfig models.SLAConfig
-	if err := s.db.Where("priority = ?", req.Priority).First(&existingConfig).Error; err == nil {
-		return nil, fmt.Errorf("SLA config for priority '%s' already exists", req.Priority)
+	if err := s.db.Where("priority = ? AND customer_tier = ?", req.Priority, tier).First(&existingConfig).Error; err == nil {
+		return nil, fmt.Errorf("SLA config for priority '%s' and tier '%s' already exists", req.Priority, tier)
 	} else if err != gorm.ErrRecordNotFound {
 		return nil, fmt.Errorf("failed to check existing config: %w", err)
 	}
@@ -143,15 +162,18 @@ func (s *SLAService) CreateSLAConfig(ctx context.Context, req *SLAConfigCreateRe
 
 	// 创建SLA配置
 	config := &models.SLAConfig{
-		Name:               req.Name,
-		Priority:           req.Priority,
-		FirstResponseTime:  req.FirstResponseTime,
-		ResolutionTime:     req.ResolutionTime,
-		EscalationTime:     req.EscalationTime,
-		BusinessHoursOnly:  req.BusinessHoursOnly,
-		Active:             active,
-		CreatedAt:          time.Now(),
-		UpdatedAt:          time.Now(),
+		Name:              req.Name,
+		Priority:          req.Priority,
+		CustomerTier:      tier,
+		WarningThreshold:  warning,
+		Tags:              joinTags(req.Tags),
+		FirstResponseTime: req.FirstResponseTime,
+		ResolutionTime:    req.ResolutionTime,
+		EscalationTime:    req.EscalationTime,
+		BusinessHoursOnly: req.BusinessHoursOnly,
+		Active:            active,
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
 	}
 
 	if err := s.db.WithContext(ctx).Create(config).Error; err != nil {
@@ -195,6 +217,9 @@ func (s *SLAService) ListSLAConfigs(ctx context.Context, req *SLAConfigListReque
 	// 应用筛选
 	if len(req.Priority) > 0 {
 		query = query.Where("priority IN ?", req.Priority)
+	}
+	if len(req.CustomerTier) > 0 {
+		query = query.Where("(customer_tier = '' OR customer_tier IN ?)", req.CustomerTier)
 	}
 	if req.Active != nil {
 		query = query.Where("active = ?", *req.Active)
@@ -272,6 +297,15 @@ func (s *SLAService) UpdateSLAConfig(ctx context.Context, id uint, req *SLAConfi
 		}
 		config.Priority = *req.Priority
 	}
+	if req.CustomerTier != nil {
+		config.CustomerTier = normalizeTier(*req.CustomerTier)
+	}
+	if req.Tags != nil {
+		config.Tags = joinTags(req.Tags)
+	}
+	if req.WarningThreshold != nil {
+		config.WarningThreshold = defaultWarning(req.WarningThreshold)
+	}
 	if req.FirstResponseTime != nil {
 		if *req.FirstResponseTime < 1 {
 			return nil, fmt.Errorf("first response time must be at least 1 minute")
@@ -303,6 +337,16 @@ func (s *SLAService) UpdateSLAConfig(ctx context.Context, id uint, req *SLAConfi
 	}
 	if config.EscalationTime >= config.ResolutionTime {
 		return nil, fmt.Errorf("escalation time must be less than resolution time")
+	}
+
+	// 组合唯一性：优先级 + 客户级别
+	var conflict models.SLAConfig
+	if err := s.db.WithContext(ctx).
+		Where("priority = ? AND customer_tier = ? AND id != ?", config.Priority, config.CustomerTier, id).
+		First(&conflict).Error; err == nil {
+		return nil, fmt.Errorf("SLA config for priority '%s' and tier '%s' already exists", config.Priority, config.CustomerTier)
+	} else if err != nil && err != gorm.ErrRecordNotFound {
+		return nil, fmt.Errorf("failed to check existing config: %w", err)
 	}
 
 	config.UpdatedAt = time.Now()
@@ -348,17 +392,37 @@ func (s *SLAService) DeleteSLAConfig(ctx context.Context, id uint) error {
 	return nil
 }
 
-// GetSLAConfigByPriority 根据优先级获取SLA配置
-func (s *SLAService) GetSLAConfigByPriority(ctx context.Context, priority string) (*models.SLAConfig, error) {
+// GetSLAConfigByPriority 根据优先级(可选客户级别)获取SLA配置
+func (s *SLAService) GetSLAConfigByPriority(ctx context.Context, priority string, customerTier string) (*models.SLAConfig, error) {
 	ctx, span := s.tracer.Start(ctx, "sla.get_config_by_priority")
 	defer span.End()
 
-	span.SetAttributes(attribute.String("sla.config.priority", priority))
+	span.SetAttributes(
+		attribute.String("sla.config.priority", priority),
+		attribute.String("sla.config.customer_tier", customerTier),
+	)
 
+	tier := normalizeTier(customerTier)
+
+	// 优先匹配特定客户级别
 	var config models.SLAConfig
-	if err := s.db.WithContext(ctx).Where("priority = ? AND active = true", priority).First(&config).Error; err != nil {
+	if tier != "" {
+		if err := s.db.WithContext(ctx).
+			Where("priority = ? AND customer_tier = ? AND active = true", priority, tier).
+			First(&config).Error; err == nil {
+			return &config, nil
+		} else if err != gorm.ErrRecordNotFound {
+			span.RecordError(err)
+			return nil, fmt.Errorf("failed to get SLA config by priority and tier: %w", err)
+		}
+	}
+
+	// 回退默认配置（未指定客户级别）
+	if err := s.db.WithContext(ctx).
+		Where("priority = ? AND (customer_tier = '' OR customer_tier IS NULL) AND active = true", priority).
+		First(&config).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, nil // 返回nil表示未找到，这是正常情况
+			return nil, nil // 未找到配置
 		}
 		span.RecordError(err)
 		return nil, fmt.Errorf("failed to get SLA config by priority: %w", err)
@@ -378,8 +442,10 @@ func (s *SLAService) CheckSLAViolation(ctx context.Context, ticket *models.Ticke
 		attribute.String("sla.ticket.status", ticket.Status),
 	)
 
-	// 获取对应的SLA配置
-	slaConfig, err := s.GetSLAConfigByPriority(ctx, ticket.Priority)
+	customerTier := s.resolveCustomerTier(ctx, ticket.CustomerID)
+
+	// 获取对应的SLA配置（优先匹配客户级别）
+	slaConfig, err := s.GetSLAConfigByPriority(ctx, ticket.Priority, customerTier)
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("failed to get SLA config: %w", err)
@@ -389,19 +455,22 @@ func (s *SLAService) CheckSLAViolation(ctx context.Context, ticket *models.Ticke
 		return nil, nil // 没有SLA配置，不检查违约
 	}
 
-	// 检查是否已经有违约记录
-	var existingViolation models.SLAViolation
-	if err := s.db.WithContext(ctx).Where("ticket_id = ? AND sla_config_id = ?", ticket.ID, slaConfig.ID).First(&existingViolation).Error; err == nil {
-		return &existingViolation, nil // 已存在违约记录
-	} else if err != gorm.ErrRecordNotFound {
-		span.RecordError(err)
-		return nil, fmt.Errorf("failed to check existing violation: %w", err)
-	}
-
 	now := time.Now()
 	violation := s.detectViolation(ticket, slaConfig, now)
 	if violation == nil {
 		return nil, nil // 没有违约
+	}
+
+	// 检查同类型的违约是否已经存在
+	var existingViolation models.SLAViolation
+	if err := s.db.WithContext(ctx).Where(
+		"ticket_id = ? AND sla_config_id = ? AND violation_type = ?",
+		ticket.ID, slaConfig.ID, violation.ViolationType,
+	).First(&existingViolation).Error; err == nil {
+		return &existingViolation, nil // 已存在相同类型的违约记录
+	} else if err != gorm.ErrRecordNotFound {
+		span.RecordError(err)
+		return nil, fmt.Errorf("failed to check existing violation: %w", err)
 	}
 
 	// 创建违约记录
@@ -413,6 +482,15 @@ func (s *SLAService) CheckSLAViolation(ctx context.Context, ticket *models.Ticke
 
 	s.logger.Warnf("SLA violation detected: ticket=%d, type=%s, deadline=%s",
 		ticket.ID, violation.ViolationType, violation.Deadline.Format(time.RFC3339))
+
+	// 触发自动化
+	if s.automation != nil {
+		go s.automation.HandleEvent(context.Background(), AutomationEvent{
+			Type:     "sla_violation",
+			TicketID: ticket.ID,
+			Payload:  violation,
+		})
+	}
 
 	return violation, nil
 }
@@ -428,8 +506,8 @@ func (s *SLAService) detectViolation(ticket *models.Ticket, slaConfig *models.SL
 	firstResponseDeadline := createdAt.Add(time.Duration(slaConfig.FirstResponseTime) * time.Minute)
 	resolutionDeadline := createdAt.Add(time.Duration(slaConfig.ResolutionTime) * time.Minute)
 
-	// 检查首次响应时间违约
-	if ticket.AgentID == 0 && now.After(firstResponseDeadline) {
+	// 检查首次响应时间违约（尚未分配坐席）
+	if ticket.AgentID == nil && now.After(firstResponseDeadline) {
 		return &models.SLAViolation{
 			TicketID:      ticket.ID,
 			SLAConfigID:   slaConfig.ID,
@@ -569,6 +647,36 @@ func (s *SLAService) ResolveSLAViolation(ctx context.Context, id uint) error {
 	return nil
 }
 
+// ResolveViolationsByTicket 按工单批量解决违约
+func (s *SLAService) ResolveViolationsByTicket(ctx context.Context, ticketID uint, violationTypes []string) error {
+	ctx, span := s.tracer.Start(ctx, "sla.resolve_ticket_violations")
+	defer span.End()
+
+	query := s.db.WithContext(ctx).Model(&models.SLAViolation{}).
+		Where("ticket_id = ? AND resolved = false", ticketID)
+	if len(violationTypes) > 0 {
+		query = query.Where("violation_type IN ?", violationTypes)
+	}
+
+	now := time.Now()
+	result := query.Updates(map[string]interface{}{
+		"resolved":    true,
+		"resolved_at": now,
+		"updated_at":  now,
+	})
+
+	if result.Error != nil {
+		span.RecordError(result.Error)
+		return fmt.Errorf("failed to resolve SLA violations: %w", result.Error)
+	}
+
+	span.SetAttributes(
+		attribute.Int64("sla.violation.ticket_id", int64(ticketID)),
+		attribute.Int64("sla.violation.rows", result.RowsAffected),
+	)
+	return nil
+}
+
 // GetSLAStats 获取SLA统计信息
 func (s *SLAService) GetSLAStats(ctx context.Context) (*SLAStatsResponse, error) {
 	ctx, span := s.tracer.Start(ctx, "sla.get_stats")
@@ -577,14 +685,17 @@ func (s *SLAService) GetSLAStats(ctx context.Context) (*SLAStatsResponse, error)
 	stats := &SLAStatsResponse{
 		ViolationsByType:     make(map[string]int),
 		ViolationsByPriority: make(map[string]int),
+		ViolationsByTier:     make(map[string]int),
 		TrendData:            []SLAComplianceTrend{},
 	}
 
 	// 统计SLA配置数量
-	if err := s.db.WithContext(ctx).Model(&models.SLAConfig{}).Count(&stats.TotalConfigs).Error; err != nil {
+	var totalConfigs int64
+	if err := s.db.WithContext(ctx).Model(&models.SLAConfig{}).Count(&totalConfigs).Error; err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("failed to count SLA configs: %w", err)
 	}
+	stats.TotalConfigs = int(totalConfigs)
 
 	var activeConfigs int64
 	if err := s.db.WithContext(ctx).Model(&models.SLAConfig{}).Where("active = true").Count(&activeConfigs).Error; err != nil {
@@ -641,6 +752,21 @@ func (s *SLAService) GetSLAStats(ctx context.Context) (*SLAStatsResponse, error)
 
 	for _, stat := range violationPriorityStats {
 		stats.ViolationsByPriority[stat.Priority] = stat.Count
+	}
+
+	// 按客户级别统计违约
+	var violationTierStats []struct {
+		Tier  string `json:"customer_tier"`
+		Count int    `json:"count"`
+	}
+	if err := s.db.WithContext(ctx).Table("sla_violations").
+		Select("COALESCE(sla_configs.customer_tier, '') as customer_tier, COUNT(*) as count").
+		Joins("JOIN sla_configs ON sla_violations.sla_config_id = sla_configs.id").
+		Group("sla_configs.customer_tier").
+		Scan(&violationTierStats).Error; err == nil {
+		for _, stat := range violationTierStats {
+			stats.ViolationsByTier[stat.Tier] = stat.Count
+		}
 	}
 
 	// 计算合规率
@@ -712,6 +838,53 @@ func (s *SLAService) getSLATrendData(ctx context.Context, days int) ([]SLACompli
 	}
 
 	return trendData, nil
+}
+
+// normalizeTier 统一客户等级字符串
+func normalizeTier(tier string) string {
+	return strings.ToLower(strings.TrimSpace(tier))
+}
+
+// defaultWarning 计算默认预警阈值
+func defaultWarning(threshold *int) int {
+	if threshold == nil {
+		return 80
+	}
+	val := *threshold
+	if val < 50 {
+		return 50
+	}
+	if val > 100 {
+		return 100
+	}
+	return val
+}
+
+// joinTags 将标签切片合并为字符串
+func joinTags(tags []string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	clean := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag != "" {
+			clean = append(clean, tag)
+		}
+	}
+	return strings.Join(clean, ",")
+}
+
+// resolveCustomerTier 根据工单的客户ID提取客户等级（复用客户优先级字段）
+func (s *SLAService) resolveCustomerTier(ctx context.Context, customerUserID uint) string {
+	if customerUserID == 0 {
+		return ""
+	}
+	var customer models.Customer
+	if err := s.db.WithContext(ctx).Where("user_id = ?", customerUserID).First(&customer).Error; err != nil {
+		return ""
+	}
+	return normalizeTier(customer.Priority)
 }
 
 // StartSLAMonitor 启动SLA监控服务

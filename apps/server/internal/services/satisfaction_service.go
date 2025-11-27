@@ -2,11 +2,14 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"servify/apps/server/internal/models"
 
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
@@ -41,26 +44,26 @@ type SatisfactionCreateRequest struct {
 
 // SatisfactionListRequest 满意度评价列表请求
 type SatisfactionListRequest struct {
-	Page       int      `form:"page,default=1"`
-	PageSize   int      `form:"page_size,default=20"`
-	TicketID   *uint    `form:"ticket_id"`
-	CustomerID *uint    `form:"customer_id"`
-	AgentID    *uint    `form:"agent_id"`
-	Rating     []int    `form:"rating"`
-	Category   []string `form:"category"`
+	Page       int        `form:"page,default=1"`
+	PageSize   int        `form:"page_size,default=20"`
+	TicketID   *uint      `form:"ticket_id"`
+	CustomerID *uint      `form:"customer_id"`
+	AgentID    *uint      `form:"agent_id"`
+	Rating     []int      `form:"rating"`
+	Category   []string   `form:"category"`
 	DateFrom   *time.Time `form:"date_from"`
 	DateTo     *time.Time `form:"date_to"`
-	SortBy     string   `form:"sort_by,default=created_at"`
-	SortOrder  string   `form:"sort_order,default=desc"`
+	SortBy     string     `form:"sort_by,default=created_at"`
+	SortOrder  string     `form:"sort_order,default=desc"`
 }
 
 // SatisfactionStatsResponse 满意度统计响应
 type SatisfactionStatsResponse struct {
-	TotalRatings     int                          `json:"total_ratings"`
-	AverageRating    float64                      `json:"average_rating"`
-	RatingDistribution map[int]int                `json:"rating_distribution"` // rating -> count
-	CategoryStats    map[string]SatisfactionStat `json:"category_stats"`
-	TrendData        []SatisfactionTrend          `json:"trend_data"`
+	TotalRatings       int                         `json:"total_ratings"`
+	AverageRating      float64                     `json:"average_rating"`
+	RatingDistribution map[int]int                 `json:"rating_distribution"` // rating -> count
+	CategoryStats      map[string]SatisfactionStat `json:"category_stats"`
+	TrendData          []SatisfactionTrend         `json:"trend_data"`
 }
 
 // SatisfactionStat 满意度统计
@@ -74,6 +77,268 @@ type SatisfactionTrend struct {
 	Date          string  `json:"date"`
 	Count         int     `json:"count"`
 	AverageRating float64 `json:"average_rating"`
+}
+
+var (
+	// ErrSurveyNotFound 表示调查不存在或 token 无效
+	ErrSurveyNotFound = errors.New("survey not found")
+	// ErrSurveyExpired 表示调查已过期
+	ErrSurveyExpired = errors.New("survey expired")
+	// ErrSurveyCompleted 表示调查已完成
+	ErrSurveyCompleted = errors.New("survey already completed")
+)
+
+// SatisfactionSurveyListRequest CSAT 调查分页查询参数
+type SatisfactionSurveyListRequest struct {
+	Page       int      `form:"page,default=1"`
+	PageSize   int      `form:"page_size,default=20"`
+	TicketID   *uint    `form:"ticket_id"`
+	CustomerID *uint    `form:"customer_id"`
+	Status     []string `form:"status"`
+	Channel    []string `form:"channel"`
+}
+
+// SatisfactionSurveyPreview 提供公共页面展示所需的信息
+type SatisfactionSurveyPreview struct {
+	TicketID    uint       `json:"ticket_id"`
+	TicketTitle string     `json:"ticket_title"`
+	AgentName   string     `json:"agent_name"`
+	Status      string     `json:"status"`
+	Channel     string     `json:"channel"`
+	ResolvedAt  *time.Time `json:"resolved_at"`
+	ExpiresAt   *time.Time `json:"expires_at"`
+	CompletedAt *time.Time `json:"completed_at"`
+}
+
+const (
+	defaultSurveyTTL = 7 * 24 * time.Hour
+)
+
+// ScheduleSurvey 在工单关闭后调度并发送满意度调查
+func (s *SatisfactionService) ScheduleSurvey(ctx context.Context, ticket *models.Ticket) (*models.SatisfactionSurvey, error) {
+	if ticket == nil {
+		return nil, fmt.Errorf("ticket required for survey scheduling")
+	}
+
+	// 如果已有评价则不再发送调查
+	var satisfactionCount int64
+	if err := s.db.WithContext(ctx).
+		Model(&models.CustomerSatisfaction{}).
+		Where("ticket_id = ?", ticket.ID).
+		Count(&satisfactionCount).Error; err != nil {
+		return nil, fmt.Errorf("failed to check satisfaction status: %w", err)
+	}
+	if satisfactionCount > 0 {
+		return nil, nil
+	}
+
+	// 如果存在待发送调查则直接复用
+	var existing models.SatisfactionSurvey
+	if err := s.db.WithContext(ctx).
+		Where("ticket_id = ? AND status IN ?", ticket.ID, []string{"queued", "sent"}).
+		Order("created_at DESC").
+		First(&existing).Error; err == nil {
+		return &existing, nil
+	} else if err != nil && err != gorm.ErrRecordNotFound {
+		return nil, fmt.Errorf("failed to load existing survey: %w", err)
+	}
+
+	now := time.Now()
+	expires := now.Add(defaultSurveyTTL)
+	channel := detectSurveyChannel(ticket.Source)
+
+	survey := &models.SatisfactionSurvey{
+		TicketID:    ticket.ID,
+		CustomerID:  ticket.CustomerID,
+		AgentID:     ticket.AgentID,
+		Channel:     channel,
+		Status:      "sent",
+		SurveyToken: uuid.NewString(),
+		SentAt:      &now,
+		ExpiresAt:   &expires,
+	}
+
+	if err := s.db.WithContext(ctx).Create(survey).Error; err != nil {
+		return nil, fmt.Errorf("failed to schedule satisfaction survey: %w", err)
+	}
+
+	s.logger.Infof("Scheduled CSAT survey for ticket %d (token=%s)", ticket.ID, survey.SurveyToken)
+	return survey, nil
+}
+
+// ListSurveys 获取 CSAT 调查列表
+func (s *SatisfactionService) ListSurveys(ctx context.Context, req *SatisfactionSurveyListRequest) ([]models.SatisfactionSurvey, int64, error) {
+	query := s.db.WithContext(ctx).Model(&models.SatisfactionSurvey{})
+
+	if req.Page < 1 {
+		req.Page = 1
+	}
+	if req.PageSize < 1 || req.PageSize > 100 {
+		req.PageSize = 20
+	}
+
+	if req.TicketID != nil {
+		query = query.Where("ticket_id = ?", *req.TicketID)
+	}
+	if req.CustomerID != nil {
+		query = query.Where("customer_id = ?", *req.CustomerID)
+	}
+	if len(req.Status) > 0 {
+		query = query.Where("status IN ?", req.Status)
+	}
+	if len(req.Channel) > 0 {
+		query = query.Where("channel IN ?", req.Channel)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to count satisfaction surveys: %w", err)
+	}
+
+	if req.PageSize > 0 {
+		offset := (req.Page - 1) * req.PageSize
+		query = query.Offset(offset).Limit(req.PageSize)
+	}
+
+	var surveys []models.SatisfactionSurvey
+	if err := query.Order("created_at DESC").Find(&surveys).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to list satisfaction surveys: %w", err)
+	}
+
+	return surveys, total, nil
+}
+
+// GetSurveyPreviewByToken 获取展示用的调查信息
+func (s *SatisfactionService) GetSurveyPreviewByToken(ctx context.Context, token string) (*SatisfactionSurveyPreview, error) {
+	if token == "" {
+		return nil, ErrSurveyNotFound
+	}
+
+	var survey models.SatisfactionSurvey
+	if err := s.db.WithContext(ctx).Where("survey_token = ?", token).First(&survey).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, ErrSurveyNotFound
+		}
+		return nil, fmt.Errorf("failed to load survey: %w", err)
+	}
+
+	var ticket models.Ticket
+	if err := s.db.WithContext(ctx).Preload("Agent").First(&ticket, survey.TicketID).Error; err != nil {
+		return nil, fmt.Errorf("failed to load ticket for survey: %w", err)
+	}
+
+	agentName := ""
+	if ticket.Agent != nil {
+		agentName = ticket.Agent.Name
+	}
+
+	return &SatisfactionSurveyPreview{
+		TicketID:    ticket.ID,
+		TicketTitle: ticket.Title,
+		AgentName:   agentName,
+		Status:      survey.Status,
+		Channel:     survey.Channel,
+		ResolvedAt:  ticket.ResolvedAt,
+		ExpiresAt:   survey.ExpiresAt,
+		CompletedAt: survey.CompletedAt,
+	}, nil
+}
+
+// RespondSurvey 根据 token 记录客户满意度评价
+func (s *SatisfactionService) RespondSurvey(ctx context.Context, token string, rating int, comment string) (*models.CustomerSatisfaction, error) {
+	if token == "" {
+		return nil, ErrSurveyNotFound
+	}
+
+	var survey models.SatisfactionSurvey
+	if err := s.db.WithContext(ctx).Where("survey_token = ?", token).First(&survey).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, ErrSurveyNotFound
+		}
+		return nil, fmt.Errorf("failed to load survey: %w", err)
+	}
+
+	if survey.Status == "completed" {
+		return nil, ErrSurveyCompleted
+	}
+	if survey.ExpiresAt != nil && time.Now().After(*survey.ExpiresAt) {
+		_ = s.db.WithContext(ctx).Model(&models.SatisfactionSurvey{}).
+			Where("id = ?", survey.ID).
+			Update("status", "expired")
+		return nil, ErrSurveyExpired
+	}
+
+	req := &SatisfactionCreateRequest{
+		TicketID:   survey.TicketID,
+		CustomerID: survey.CustomerID,
+		AgentID:    survey.AgentID,
+		Rating:     rating,
+		Comment:    comment,
+		Category:   "overall",
+	}
+
+	satisfaction, err := s.CreateSatisfaction(ctx, req)
+	if err != nil {
+		// 若已有评价则返回已存在的记录
+		if strings.Contains(err.Error(), "already exists") {
+			existing, getErr := s.GetSatisfactionByTicket(ctx, survey.TicketID)
+			if getErr == nil && existing != nil {
+				return existing, nil
+			}
+		}
+		return nil, err
+	}
+
+	completed := time.Now()
+	if err := s.db.WithContext(ctx).
+		Model(&models.SatisfactionSurvey{}).
+		Where("id = ?", survey.ID).
+		Updates(map[string]interface{}{
+			"status":          "completed",
+			"completed_at":    completed,
+			"satisfaction_id": satisfaction.ID,
+		}).Error; err != nil {
+		s.logger.Warnf("Failed to update survey %d after response: %v", survey.ID, err)
+	}
+
+	return satisfaction, nil
+}
+
+// ResendSurvey 重新发送调查邮件/链接
+func (s *SatisfactionService) ResendSurvey(ctx context.Context, id uint) (*models.SatisfactionSurvey, error) {
+	var survey models.SatisfactionSurvey
+	if err := s.db.WithContext(ctx).First(&survey, id).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, ErrSurveyNotFound
+		}
+		return nil, fmt.Errorf("failed to load survey: %w", err)
+	}
+
+	if survey.Status == "completed" && survey.SatisfactionID != nil {
+		return nil, ErrSurveyCompleted
+	}
+
+	originalCompleted := survey.Status == "completed"
+	now := time.Now()
+	expires := now.Add(defaultSurveyTTL)
+	if survey.SurveyToken == "" {
+		survey.SurveyToken = uuid.NewString()
+	}
+
+	survey.Status = "sent"
+	survey.SentAt = &now
+	survey.ExpiresAt = &expires
+	if !originalCompleted {
+		survey.CompletedAt = nil
+		survey.SatisfactionID = nil
+	}
+
+	if err := s.db.WithContext(ctx).Save(&survey).Error; err != nil {
+		return nil, fmt.Errorf("failed to resend survey: %w", err)
+	}
+
+	s.logger.Infof("Resent CSAT survey for ticket %d", survey.TicketID)
+	return &survey, nil
 }
 
 // CreateSatisfaction 创建满意度评价
@@ -370,4 +635,17 @@ func (s *SatisfactionService) UpdateSatisfaction(ctx context.Context, id uint, c
 
 	s.logger.Infof("Updated satisfaction comment: id=%d", id)
 	return &satisfaction, nil
+}
+
+func detectSurveyChannel(source string) string {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "chat", "im":
+		return "chat"
+	case "voice", "phone":
+		return "voice"
+	case "email":
+		return "email"
+	default:
+		return "email"
+	}
 }
