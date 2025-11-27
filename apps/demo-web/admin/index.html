@@ -17,6 +17,9 @@
       <button data-tab="agents">客服</button>
       <button data-tab="satisfaction">满意度评价</button>
       <button data-tab="sla">SLA 管理</button>
+      <button data-tab="macros">宏与模板</button>
+      <button data-tab="automations">自动化</button>
+      <button data-tab="integrations">应用市场</button>
       <button data-tab="ai">AI 状态</button>
     </nav>
   </header>
@@ -68,6 +71,173 @@
       <div class="panel">
         <h3>平台接入详情</h3>
         <pre id="platforms_json" class="json"></pre>
+      </div>
+    </section>
+
+    <section id="macros" class="tab">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>宏模板列表</h3>
+          <div class="controls">
+            <button id="btn_macros_refresh">刷新</button>
+            <small>支持占位符：如 {{customer.name}}</small>
+          </div>
+        </div>
+        <table id="tbl_macros">
+          <thead>
+            <tr><th>ID</th><th>名称</th><th>语言</th><th>更新时间</th><th>状态</th><th>操作</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h3>创建宏模板</h3>
+        <form id="form_macro">
+          <div class="form-group">
+            <label>名称 *</label>
+            <input type="text" name="name" placeholder="如：VIP 道歉模板" required />
+          </div>
+          <div class="form-group">
+            <label>语言</label>
+            <input type="text" name="language" placeholder="zh / en" />
+          </div>
+          <div class="form-group">
+            <label>描述</label>
+            <input type="text" name="description" placeholder="用途说明（可选）" />
+          </div>
+          <div class="form-group">
+            <label>内容 *</label>
+            <textarea name="content" class="code-input" placeholder="尊敬的 {{customer.name}}，我们已收到您的反馈..." required></textarea>
+          </div>
+          <button type="submit">保存宏模板</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="automations" class="tab">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>自动化触发器</h3>
+          <div class="controls">
+            <button id="btn_automations_refresh">刷新</button>
+            <small>事件：ticket_created / ticket_updated / sla_violation</small>
+          </div>
+        </div>
+        <table id="tbl_automations">
+          <thead>
+            <tr><th>ID</th><th>名称</th><th>事件</th><th>条件</th><th>动作</th><th>状态</th><th>操作</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h3>创建触发器</h3>
+        <form id="form_automation">
+          <div class="form-group">
+            <label>名称 *</label>
+            <input type="text" name="name" placeholder="如：VIP 升级提示" required />
+          </div>
+          <div class="form-group">
+            <label>事件 *</label>
+            <select name="event" required>
+              <option value="ticket_created">工单创建</option>
+              <option value="ticket_updated">工单更新</option>
+              <option value="sla_violation">SLA 违约</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>条件 (JSON)</label>
+            <textarea name="conditions" class="code-input" placeholder='[{"field":"ticket.priority","op":"eq","value":"urgent"}]'></textarea>
+          </div>
+          <div class="form-group">
+            <label>动作 (JSON)</label>
+            <textarea name="actions" class="code-input" placeholder='[{"type":"add_tag","params":{"tag":"vip-alert"}}]'></textarea>
+          </div>
+          <div class="form-group">
+            <label><input type="checkbox" name="active" checked /> 启用</label>
+          </div>
+          <button type="submit">保存触发器</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="integrations" class="tab">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>已安装的应用</h3>
+          <div class="controls">
+            <input type="text" id="integration_search" placeholder="搜索名称或供应商" />
+            <button id="btn_integrations_refresh">刷新</button>
+          </div>
+        </div>
+        <table id="tbl_integrations">
+          <thead>
+            <tr>
+              <th>应用</th>
+              <th>供应商</th>
+              <th>类别</th>
+              <th>功能</th>
+              <th>状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="panel integration-grid">
+        <div class="integration-preview">
+          <h3>Iframe 预览</h3>
+          <p class="panel-desc">选择列表中的应用即可加载其 iframe；用于验证 CRM/计费等扩展的嵌入效果。</p>
+          <iframe id="integration_preview" title="integration-preview"></iframe>
+        </div>
+        <div class="integration-form">
+          <h3>创建集成</h3>
+          <form id="form_integration">
+            <div class="form-group">
+              <label>名称 *</label>
+              <input name="name" type="text" required placeholder="如：Stripe Billing" />
+            </div>
+            <div class="form-group">
+              <label>Slug (可选)</label>
+              <input name="slug" type="text" placeholder="stripe-billing" />
+            </div>
+            <div class="row">
+              <div class="form-group" style="flex:1;">
+                <label>供应商</label>
+                <input name="vendor" type="text" placeholder="Stripe" />
+              </div>
+              <div class="form-group" style="flex:1;">
+                <label>类别</label>
+                <input name="category" type="text" placeholder="Billing / CRM" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label>图标 URL</label>
+              <input name="icon_url" type="text" placeholder="https://..." />
+            </div>
+            <div class="form-group">
+              <label>IFrame URL *</label>
+              <input name="iframe_url" type="text" required placeholder="https://..." />
+            </div>
+            <div class="form-group">
+              <label>简介</label>
+              <textarea name="summary" rows="3" placeholder="该应用将嵌入 Stripe 账单管理面板..."></textarea>
+            </div>
+            <div class="form-group">
+              <label>能力标签 (逗号分隔)</label>
+              <input name="capabilities" type="text" placeholder="billing,crm,report" />
+            </div>
+            <div class="form-group">
+              <label>配置 Schema (JSON，可选)</label>
+              <textarea name="config_schema" class="code-input" placeholder='{"apiKey":{"type":"string"}}'></textarea>
+            </div>
+            <label><input type="checkbox" name="enabled" checked /> 启用</label>
+            <button type="submit">保存集成</button>
+          </form>
+        </div>
       </div>
     </section>
 
@@ -230,6 +400,40 @@
           <span id="satisfaction_page_info">第1页 / 共1页</span>
           <button id="btn_satisfaction_next" disabled>下一页</button>
         </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h3>CSAT 调查发送记录</h3>
+          <div class="controls">
+            <select id="csat_filter_status">
+              <option value="">所有状态</option>
+              <option value="sent">已发送</option>
+              <option value="queued">排队中</option>
+              <option value="completed">已完成</option>
+              <option value="expired">已过期</option>
+            </select>
+            <button id="btn_csat_refresh">刷新</button>
+          </div>
+        </div>
+        <p class="panel-desc">工单关闭后将自动派发调查链接，可通过下表查看状态或复制公共回复链接。</p>
+        <table id="tbl_csat_surveys">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>工单</th>
+              <th>客户</th>
+              <th>渠道</th>
+              <th>状态</th>
+              <th>Token</th>
+              <th>发送时间</th>
+              <th>过期时间</th>
+              <th>完成时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
       </div>
     </section>
 

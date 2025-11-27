@@ -22,6 +22,16 @@
     const r = await fetch(url, { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(data||{}) });
     if(!r.ok) throw new Error('HTTP '+r.status); return r.json();
   }
+  async function jput(url, data){
+    const r = await fetch(url, { method: 'PUT', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(data||{}) });
+    if(!r.ok) throw new Error('HTTP '+r.status); return r.json();
+  }
+  async function jdel(url){
+    const r = await fetch(url, { method: 'DELETE' });
+    if(!r.ok) throw new Error('HTTP '+r.status); return r.json();
+  }
+  const formatDateTime = (value) => value ? new Date(value).toLocaleString() : '-';
+  const buildCSATLink = (token) => token ? `${window.location.origin}/satisfaction.html?token=${token}` : '';
 
   // 仪表板
   let dashboardCharts = {
@@ -1085,6 +1095,8 @@
   $('#btn_satisfaction_next')?.addEventListener('click', () => {
     loadSatisfactions(satisfactionCurrentPage + 1);
   });
+  $('#btn_csat_refresh')?.addEventListener('click', () => loadCSATSurveys());
+  $('#csat_filter_status')?.addEventListener('change', () => loadCSATSurveys());
 
   // 全局函数，供HTML调用
   window.viewSatisfactionDetail = async (id) => {
@@ -1128,34 +1140,394 @@
     }
   };
 
+  async function loadCSATSurveys() {
+    const tbody = $('#tbl_csat_surveys tbody');
+    if (!tbody) return;
+
+    const status = $('#csat_filter_status')?.value;
+    const params = new URLSearchParams({ page: '1', page_size: '20' });
+    if (status) params.append('status', status);
+
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#718096;">加载中...</td></tr>';
+
+    try {
+      const res = await jget(`${API}/satisfactions/surveys?${params.toString()}`);
+      const surveys = res.data || [];
+
+      if (surveys.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#718096;">暂无调查记录</td></tr>';
+        return;
+      }
+
+      const statusText = {
+        sent: '已发送',
+        queued: '排队中',
+        completed: '已完成',
+        expired: '已过期'
+      };
+
+      tbody.innerHTML = '';
+      surveys.forEach(item => {
+        const statusLabel = statusText[item.status] || item.status || '-';
+        const statusClass = `survey-status ${item.status || 'queued'}`;
+        const link = buildCSATLink(item.survey_token);
+        const tokenCell = item.survey_token ? `<code>${item.survey_token}</code>` : '-';
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${item.id}</td>
+          <td>#${item.ticket_id}</td>
+          <td>${item.customer_id}</td>
+          <td>${item.channel || '-'}</td>
+          <td><span class="${statusClass}">${statusLabel}</span></td>
+          <td>${tokenCell}</td>
+          <td>${formatDateTime(item.sent_at)}</td>
+          <td>${formatDateTime(item.expires_at)}</td>
+          <td>${formatDateTime(item.completed_at)}</td>
+          <td>
+            <button class="btn-copy-csat" data-link="${link}" ${item.survey_token ? '' : 'disabled'}>复制链接</button>
+            <button class="btn-resend-csat" data-id="${item.id}" ${item.status === 'completed' ? 'disabled' : ''}>重发</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      tbody.querySelectorAll('.btn-copy-csat').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const link = btn.dataset.link;
+          if (!link) {
+            alert('无可用链接');
+            return;
+          }
+          try {
+            if (navigator.clipboard?.writeText) {
+              await navigator.clipboard.writeText(link);
+            } else {
+              window.prompt('复制链接', link);
+            }
+            btn.textContent = '已复制';
+            setTimeout(() => (btn.textContent = '复制链接'), 1500);
+          } catch (e) {
+            alert('复制失败: ' + e.message);
+          }
+        });
+      });
+
+      tbody.querySelectorAll('.btn-resend-csat').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('确认重新发送该调查链接？')) return;
+          try {
+            await jpost(`${API}/satisfactions/surveys/${btn.dataset.id}/resend`, {});
+            alert('已重新发送');
+            loadCSATSurveys();
+          } catch (e) {
+            alert('重发失败: ' + e.message);
+          }
+        });
+      });
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:#e53e3e;">加载失败: ${e.message}</td></tr>`;
+    }
+  }
+
+  // 宏/模板
+  async function loadMacros() {
+    try {
+      const list = await jget(`${API}/macros`);
+      const tbody = $('#tbl_macros tbody');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+      if (!list || list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#718096;">暂无宏模板</td></tr>';
+        return;
+      }
+      list.forEach(m => {
+        const status = m.active ? '<span class="status-active">启用</span>' : '<span class="status-inactive">停用</span>';
+        const updated = m.updated_at ? new Date(m.updated_at).toLocaleString() : '-';
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${m.id}</td>
+          <td>${m.name}</td>
+          <td>${m.language || 'zh'}</td>
+          <td>${updated}</td>
+          <td>${status}</td>
+          <td>
+            <button class="btn-macro-apply" data-id="${m.id}">应用</button>
+            <button class="btn-macro-delete" data-id="${m.id}" style="background:#e53e3e;color:white;">删除</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+      tbody.querySelectorAll('.btn-macro-delete').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('确定删除该宏模板？')) return;
+          try {
+            await jdel(`${API}/macros/${btn.dataset.id}`);
+            loadMacros();
+          } catch (e) {
+            alert('删除失败: ' + e.message);
+          }
+        });
+      });
+      tbody.querySelectorAll('.btn-macro-apply').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const ticketId = prompt('输入要应用的工单ID');
+          if (!ticketId) return;
+          try {
+            await jpost(`${API}/macros/${btn.dataset.id}/apply`, { ticket_id: Number(ticketId) });
+            alert('已添加到工单评论');
+          } catch (e) {
+            alert('应用失败: ' + e.message);
+          }
+        });
+      });
+    } catch (e) {
+      const tbody = $('#tbl_macros tbody');
+      if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#e53e3e;">加载失败: ${e.message}</td></tr>`;
+      }
+    }
+  }
+
+  $('#form_macro')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const data = {
+      name: form.name.value,
+      description: form.description.value,
+      language: form.language.value,
+      content: form.content.value
+    };
+    if (!data.name || !data.content) {
+      alert('名称和内容必填');
+      return;
+    }
+    try {
+      await jpost(`${API}/macros`, data);
+      alert('宏模板创建成功');
+      form.reset();
+      loadMacros();
+    } catch (err) {
+      alert('创建失败: ' + err.message);
+    }
+  });
+  $('#btn_macros_refresh')?.addEventListener('click', () => loadMacros());
+
+  // 应用市场
+  let integrationsCache = [];
+  const integrationPreviewFrame = document.getElementById('integration_preview');
+
+  async function loadIntegrations(options = {}) {
+    try {
+      const params = new URLSearchParams({ page: '1', page_size: '50' });
+      if (options.search) {
+        params.set('search', options.search);
+      }
+      const res = await jget(`${API}/apps/integrations?${params.toString()}`);
+      integrationsCache = res.data || [];
+      const tbody = $('#tbl_integrations tbody');
+      if (!tbody) return;
+      if (integrationsCache.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#718096;">暂无应用集成</td></tr>';
+        return;
+      }
+      tbody.innerHTML = '';
+      integrationsCache.forEach(item => {
+        const caps = (item.capabilities || []).map(cap => `<span class="capability-pill">${cap}</span>`).join('') || '-';
+        const icon = item.icon_url ? `<img src="${item.icon_url}" alt="${item.name}" style="width:24px;height:24px;border-radius:4px;margin-right:6px;vertical-align:middle;">` : '';
+        const status = item.enabled ? '<span class="status-active">启用</span>' : '<span class="status-inactive">停用</span>';
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><div style="display:flex;align-items:center;">${icon}<div><strong>${item.name}</strong><div style="font-size:12px;color:#718096;">${item.summary || ''}</div></div></div></td>
+          <td>${item.vendor || '-'}</td>
+          <td>${item.category || '-'}</td>
+          <td>${caps}</td>
+          <td>${status}</td>
+          <td class="integration-actions">
+            <button class="btn-preview-integration" data-url="${item.iframe_url}">预览</button>
+            <button class="btn-toggle-integration" data-id="${item.id}" data-enabled="${item.enabled}">
+              ${item.enabled ? '停用' : '启用'}
+            </button>
+            <button class="btn-delete-integration" data-id="${item.id}" style="background:#e53e3e;color:white;">删除</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      tbody.querySelectorAll('.btn-preview-integration').forEach(btn => {
+        btn.addEventListener('click', () => setIntegrationPreview(btn.dataset.url));
+      });
+      tbody.querySelectorAll('.btn-toggle-integration').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = Number(btn.dataset.id);
+          const current = btn.dataset.enabled === 'true';
+          try {
+            await jput(`${API}/apps/integrations/${id}`, { enabled: !current });
+            loadIntegrations({ search: options.search });
+          } catch (e) {
+            alert('更新失败: ' + e.message);
+          }
+        });
+      });
+      tbody.querySelectorAll('.btn-delete-integration').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('确定删除该应用？')) return;
+          try {
+            await jdel(`${API}/apps/integrations/${btn.dataset.id}`);
+            loadIntegrations({ search: options.search });
+          } catch (e) {
+            alert('删除失败: ' + e.message);
+          }
+        });
+      });
+    } catch (e) {
+      const tbody = $('#tbl_integrations tbody');
+      if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#e53e3e;">加载失败: ${e.message}</td></tr>`;
+      }
+    }
+  }
+
+  function setIntegrationPreview(url) {
+    if (!integrationPreviewFrame) return;
+    if (!url) {
+      integrationPreviewFrame.src = '';
+      return;
+    }
+    integrationPreviewFrame.src = url;
+  }
+
+  $('#btn_integrations_refresh')?.addEventListener('click', () => {
+    const search = $('#integration_search')?.value;
+    loadIntegrations({ search });
+  });
+
+  $('#integration_search')?.addEventListener('keyup', (e) => {
+    if (e.key === 'Enter') {
+      loadIntegrations({ search: e.target.value });
+    }
+  });
+
+  $('#form_integration')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    let configSchema = {};
+    if (form.config_schema.value) {
+      try {
+        configSchema = JSON.parse(form.config_schema.value);
+      } catch (err) {
+        alert('配置 Schema 不是合法 JSON');
+        return;
+      }
+    }
+    const payload = {
+      name: form.name.value,
+      slug: form.slug.value,
+      vendor: form.vendor.value,
+      category: form.category.value,
+      icon_url: form.icon_url.value,
+      iframe_url: form.iframe_url.value,
+      summary: form.summary.value,
+      capabilities: form.capabilities.value ? form.capabilities.value.split(',').map(s => s.trim()).filter(Boolean) : [],
+      config_schema: configSchema,
+      enabled: form.enabled.checked,
+    };
+    try {
+      await jpost(`${API}/apps/integrations`, payload);
+      alert('应用创建成功');
+      form.reset();
+      form.enabled.checked = true;
+      loadIntegrations();
+    } catch (err) {
+      alert('创建失败: ' + err.message);
+    }
+  });
+
+  // 自动化触发器
+  async function loadAutomations() {
+    try {
+      const list = await jget(`${API}/automations`);
+      const tbody = $('#tbl_automations tbody');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+      if (!list || list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#718096;">暂无触发器</td></tr>';
+        return;
+      }
+      list.forEach(item => {
+        const status = item.active ? '<span class="status-active">启用</span>' : '<span class="status-inactive">停用</span>';
+        const conds = item.conditions?.slice(0, 80) || '';
+        const acts = item.actions?.slice(0, 80) || '';
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${item.id}</td>
+          <td>${item.name}</td>
+          <td>${item.event}</td>
+          <td title="${item.conditions || ''}">${conds}</td>
+          <td title="${item.actions || ''}">${acts}</td>
+          <td>${status}</td>
+          <td><button class="btn-automation-delete" data-id="${item.id}" style="background:#e53e3e;color:white;">删除</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+      tbody.querySelectorAll('.btn-automation-delete').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('确定删除该触发器？')) return;
+          try {
+            await jdel(`${API}/automations/${btn.dataset.id}`);
+            loadAutomations();
+          } catch (e) {
+            alert('删除失败: ' + e.message);
+          }
+        });
+      });
+    } catch (e) {
+      const tbody = $('#tbl_automations tbody');
+      if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#e53e3e;">加载失败: ${e.message}</td></tr>`;
+      }
+    }
+  }
+
+  $('#form_automation')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const data = {
+      name: form.name.value,
+      event: form.event.value,
+      conditions: form.conditions.value ? JSON.parse(form.conditions.value) : [],
+      actions: form.actions.value ? JSON.parse(form.actions.value) : [],
+      active: form.active.checked
+    };
+    if (!data.name || !data.event) {
+      alert('名称和事件必填');
+      return;
+    }
+    try {
+      await jpost(`${API}/automations`, data);
+      alert('创建成功');
+      form.reset();
+      form.active.checked = true;
+      loadAutomations();
+    } catch (err) {
+      alert('创建失败: ' + err.message);
+    }
+  });
+  $('#btn_automations_refresh')?.addEventListener('click', () => loadAutomations());
+
   // 初始化
   loadDashboard();
   loadTickets();
   loadCustomers();
   loadAgents();
   loadAI();
+  loadMacros();
+  loadAutomations();
+  loadSatisfactions();
+  loadSatisfactionStats();
+  loadCSATSurveys();
+  loadIntegrations();
 
-  // 导航切换时加载满意度数据
-  const originalSetActive = setActive;
-  window.setActive = function(tab) {
-    originalSetActive(tab);
-    if (tab === 'satisfaction') {
-      loadSatisfactions();
-      loadSatisfactionStats();
-    } else if (tab === 'dashboard') {
-      // 重新初始化仪表板图表
-      setTimeout(() => {
-        initializeDashboardCharts();
-      }, 100);
-    } else if (tab === 'tickets') {
-      // 重新初始化工单图表
-      setTimeout(() => {
-        initializeTicketCharts();
-      }, 100);
-    }
-  };
-  setActive = window.setActive;
-
+  // 导航切换时加载满意度/宏数据
   // 窗口大小变化时重新调整图表大小
   window.addEventListener('resize', () => {
     // 延迟执行，避免频繁调用
@@ -1752,13 +2124,14 @@
     loadSLAViolations(1, filters);
   });
 
-  // 更新导航切换逻辑，包含SLA
+  // 更新导航切换逻辑，包含SLA、应用市场
   const originalSetActive = setActive;
   window.setActive = function(tab) {
     originalSetActive(tab);
     if (tab === 'satisfaction') {
       loadSatisfactions();
       loadSatisfactionStats();
+      loadCSATSurveys();
     } else if (tab === 'dashboard') {
       setTimeout(() => {
         initializeDashboardCharts();
@@ -1767,6 +2140,12 @@
       setTimeout(() => {
         initializeTicketCharts();
       }, 100);
+    } else if (tab === 'macros') {
+      loadMacros();
+    } else if (tab === 'automations') {
+      loadAutomations();
+    } else if (tab === 'integrations') {
+      loadIntegrations();
     } else if (tab === 'sla') {
       // 加载SLA数据
       loadSLAConfigs();

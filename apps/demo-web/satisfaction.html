@@ -36,6 +36,32 @@
         opacity: 0;
         transform: translateY(30px);
       }
+      async loadSurveyPreview() {
+        try {
+          const preview = await this.publicApi.request(`/csat/${this.surveyToken}`);
+          this.ticketId = preview.ticket_id;
+          document.getElementById('ticket-title').textContent = preview.ticket_title || '-';
+          document.getElementById('ticket-id').textContent = preview.ticket_id || '-';
+          document.getElementById('agent-name').textContent = preview.agent_name || '系统处理';
+          document.getElementById('resolved-time').textContent = preview.resolved_at
+            ? new Date(preview.resolved_at).toLocaleString('zh-CN')
+            : '-';
+
+          if (preview.status === 'completed') {
+            this.showSuccess('您已完成此次调查，感谢参与！');
+            throw new Error('Survey completed');
+          }
+          if (preview.status === 'expired') {
+            this.showError('抱歉，本次调查已过期。');
+            throw new Error('Survey expired');
+          }
+        } catch (error) {
+          if (error.message !== 'Survey completed' && error.message !== 'Survey expired') {
+            this.showError(`无法加载调查信息：${error.message}`);
+          }
+          throw error;
+        }
+      }
       to {
         opacity: 1;
         transform: translateY(0);
@@ -411,9 +437,11 @@
     class SatisfactionApp {
       constructor() {
         this.api = new ApiClient();
+        this.publicApi = new ApiClient('/public');
         this.starRating = new StarRating(document.getElementById('star-rating'));
         this.ticketId = getUrlParameter('ticket_id');
         this.customerId = getUrlParameter('customer_id');
+        this.surveyToken = getUrlParameter('token');
 
         this.loadingEl = document.getElementById('loading');
         this.errorMessageEl = document.getElementById('error-message');
@@ -424,18 +452,28 @@
       }
 
       async init() {
-        if (!this.ticketId || !this.customerId) {
-          this.showError('缺少必要参数：工单ID或客户ID');
-          return;
-        }
-
         try {
+          if (this.surveyToken) {
+            await this.loadSurveyPreview();
+            this.setupForm();
+            this.showForm();
+            return;
+          }
+
+          if (!this.ticketId || !this.customerId) {
+            this.showError('缺少必要参数：工单ID或客户ID');
+            return;
+          }
+
           await this.loadTicketInfo();
           await this.checkExistingSatisfaction();
           this.setupForm();
           this.showForm();
         } catch (error) {
-          this.showError(`加载失败：${error.message}`);
+          // loadSurveyPreview 已经展示了错误信息
+          if (!this.surveyToken) {
+            this.showError(`加载失败：${error.message}`);
+          }
         }
       }
 
@@ -477,18 +515,30 @@
           return;
         }
 
-        const data = {
-          ticket_id: parseInt(this.ticketId),
-          customer_id: parseInt(this.customerId),
-          agent_id: this.ticketData.agent_id || null,
-          rating: rating,
-          category: document.getElementById('category').value,
-          comment: document.getElementById('comment').value.trim()
-        };
+        const comment = document.getElementById('comment').value.trim();
+        const category = document.getElementById('category').value;
 
         try {
           submitBtn.disabled = true;
           submitBtn.textContent = '提交中...';
+
+          if (this.surveyToken) {
+            await this.publicApi.request(`/csat/${this.surveyToken}/respond`, {
+              method: 'POST',
+              body: JSON.stringify({ rating, comment })
+            });
+            this.showSuccess();
+            return;
+          }
+
+          const data = {
+            ticket_id: parseInt(this.ticketId),
+            customer_id: parseInt(this.customerId),
+            agent_id: this.ticketData.agent_id || null,
+            rating,
+            category,
+            comment
+          };
 
           await this.api.createSatisfaction(data);
           this.showSuccess();
