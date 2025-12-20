@@ -1,0 +1,113 @@
+package handlers
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+
+	"servify/apps/server/internal/models"
+	"servify/apps/server/internal/services"
+)
+
+func newTestDBForSLA(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	db, err := gorm.Open(sqlite.Open("file:sla_handler?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("db handle: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+
+	if err := db.AutoMigrate(&models.SLAConfig{}, &models.SLAViolation{}, &models.Ticket{}); err != nil {
+		t.Fatalf("automigrate: %v", err)
+	}
+	return db
+}
+
+func TestSLAHandler_Create_And_List(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := newTestDBForSLA(t)
+	logger := logrus.New()
+	logger.SetLevel(logrus.WarnLevel)
+
+	svc := services.NewSLAService(db, logger)
+	h := NewSLAHandler(svc, nil)
+
+	r := gin.New()
+	r.POST("/api/sla/configs", h.CreateSLAConfig)
+	r.GET("/api/sla/configs/:id", h.GetSLAConfig)
+	r.GET("/api/sla/configs", h.ListSLAConfigs)
+	r.PUT("/api/sla/configs/:id", h.UpdateSLAConfig)
+	r.DELETE("/api/sla/configs/:id", h.DeleteSLAConfig)
+
+	// Create config
+	body := map[string]any{
+		"name":                "default-normal",
+		"priority":            "normal",
+		"first_response_time": 30,
+		"resolution_time":     240,
+		"escalation_time":     60,
+	}
+	b, _ := json.Marshal(body)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/api/sla/configs", bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", w.Code, w.Body.String())
+	}
+	var created models.SLAConfig
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal create: %v body=%s", err, w.Body.String())
+	}
+	if created.ID == 0 {
+		t.Fatalf("expected created config id")
+	}
+
+	// List configs
+	w2 := httptest.NewRecorder()
+	req2, _ := http.NewRequest(http.MethodGet, "/api/sla/configs?page=1&page_size=10", nil)
+	r.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("list status=%d body=%s", w2.Code, w2.Body.String())
+	}
+
+	// Get config
+	w3 := httptest.NewRecorder()
+	req3, _ := http.NewRequest(http.MethodGet, "/api/sla/configs/"+toStr(created.ID), nil)
+	r.ServeHTTP(w3, req3)
+	if w3.Code != http.StatusOK {
+		t.Fatalf("get status=%d body=%s", w3.Code, w3.Body.String())
+	}
+
+	// Update config (name only)
+	updateBody := map[string]any{"name": "default-normal-updated"}
+	bu, _ := json.Marshal(updateBody)
+	w4 := httptest.NewRecorder()
+	req4, _ := http.NewRequest(http.MethodPut, "/api/sla/configs/"+toStr(created.ID), bytes.NewReader(bu))
+	req4.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w4, req4)
+	if w4.Code != http.StatusOK {
+		t.Fatalf("update status=%d body=%s", w4.Code, w4.Body.String())
+	}
+
+	// Delete config
+	w5 := httptest.NewRecorder()
+	req5, _ := http.NewRequest(http.MethodDelete, "/api/sla/configs/"+toStr(created.ID), nil)
+	r.ServeHTTP(w5, req5)
+	if w5.Code != http.StatusOK {
+		t.Fatalf("delete status=%d body=%s", w5.Code, w5.Body.String())
+	}
+}

@@ -861,7 +861,9 @@ client.startRemoteAssist();
 
 ### 开发规范
 1. 遵循 Go 代码规范
-2. 提交前运行测试: `go test ./...`
+2. 提交前运行测试:
+   - `go -C apps/server test ./...`
+   - 或 `./scripts/run-tests.sh`（包含覆盖率阈值校验，可通过 `TEST_COVERAGE_TARGET` 覆盖）
 3. 提交信息格式: `feat: 添加新功能` 或 `fix: 修复问题`
 
 ### 问题反馈

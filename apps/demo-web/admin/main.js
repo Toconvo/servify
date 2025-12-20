@@ -33,6 +33,80 @@
   const formatDateTime = (value) => value ? new Date(value).toLocaleString() : '-';
   const buildCSATLink = (token) => token ? `${window.location.origin}/satisfaction.html?token=${token}` : '';
 
+  function formatDateYMD(d) {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  function getLastNDaysRange(days) {
+    const end = new Date();
+    end.setHours(0, 0, 0, 0);
+    const start = new Date(end);
+    start.setDate(end.getDate() - (days - 1));
+    return { start: formatDateYMD(start), end: formatDateYMD(end) };
+  }
+
+  function enumerateDates(startYMD, endYMD) {
+    const [sy, sm, sd] = startYMD.split('-').map(n => parseInt(n, 10));
+    const [ey, em, ed] = endYMD.split('-').map(n => parseInt(n, 10));
+    const cur = new Date(sy, sm - 1, sd);
+    const end = new Date(ey, em - 1, ed);
+    cur.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+
+    const out = [];
+    while (cur <= end) {
+      out.push(formatDateYMD(cur));
+      cur.setDate(cur.getDate() + 1);
+    }
+    return out;
+  }
+
+  function csvEscape(v) {
+    if (v === null || v === undefined) return '';
+    const s = String(v);
+    if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+
+  function toCSV(rows) {
+    return rows.map(r => r.map(csvEscape).join(',')).join('\n') + '\n';
+  }
+
+  function downloadText(filename, text, mime) {
+    const blob = new Blob([text], { type: mime || 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadCSV(filename, rows) {
+    downloadText(filename, toCSV(rows), 'text/csv;charset=utf-8');
+  }
+
+  function getSatisfactionStatsRange() {
+    const from = $('#satisfaction_filter_date_from')?.value || '';
+    const to = $('#satisfaction_filter_date_to')?.value || '';
+    if (!from && !to) return getLastNDaysRange(7);
+    if (from && to) return { start: from, end: to };
+    if (from && !to) return { start: from, end: formatDateYMD(new Date()) };
+    // only "to"
+    return { start: to, end: to };
+  }
+
+  function buildQuery(params) {
+    const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '');
+    if (entries.length === 0) return '';
+    return '?' + entries.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`).join('&');
+  }
+
   // 仪表板
   let dashboardCharts = {
     ticketTrend: null,
@@ -104,23 +178,23 @@
     dashboardCharts.ticketTrend = echarts.init(chartDom);
 
     try {
-      // 获取最近7天的工单统计数据
+      // 最近 7 天：优先使用后端统计接口（避免前端模拟数据）
       const endDate = new Date();
       const startDate = new Date();
       startDate.setDate(endDate.getDate() - 6);
 
-      const dateRange = [];
-      const createdData = [];
-      const resolvedData = [];
+      const startStr = startDate.toISOString().split('T')[0];
+      const endStr = endDate.toISOString().split('T')[0];
 
-      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-        const dateStr = d.toISOString().split('T')[0];
-        dateRange.push(d.getMonth() + 1 + '/' + d.getDate());
+      const stats = await jget(`${API}/statistics/time-range?start_date=${encodeURIComponent(startStr)}&end_date=${encodeURIComponent(endStr)}`);
+      const trend = Array.isArray(stats) ? stats : (stats.data || []);
 
-        // 这里可以调用真实API获取数据，暂时使用模拟数据
-        createdData.push(Math.floor(Math.random() * 50) + 10);
-        resolvedData.push(Math.floor(Math.random() * 45) + 5);
-      }
+      const dateRange = trend.map(item => {
+        const d = new Date(item.date);
+        return (d.getMonth() + 1) + '/' + d.getDate();
+      });
+      const createdData = trend.map(item => item.tickets ?? 0);
+      const resolvedData = trend.map(item => item.resolved_tickets ?? 0);
 
       const option = {
         tooltip: {
@@ -374,6 +448,61 @@
     } catch (e) {
       console.error('Failed to init platform stats chart:', e);
     }
+  }
+
+  async function exportTicketTrendCSV() {
+    const { start, end } = getLastNDaysRange(7);
+    const stats = await jget(`${API}/statistics/time-range` + buildQuery({ start_date: start, end_date: end }));
+    const trend = Array.isArray(stats) ? stats : (stats.data || []);
+    const rows = [
+      ['date', 'tickets_created', 'tickets_resolved', 'sessions', 'messages'],
+      ...trend.map(item => [item.date, item.tickets ?? 0, item.resolved_tickets ?? 0, item.sessions ?? 0, item.messages ?? 0]),
+    ];
+    downloadCSV(`ticket_trend_${start}_to_${end}.csv`, rows);
+  }
+
+  async function exportDashboardSatisfactionDistributionCSV() {
+    const { start, end } = getLastNDaysRange(7);
+    const res = await jget(`${API}/satisfactions/stats` + buildQuery({ date_from: start, date_to: end }));
+    const dist = res.rating_distribution || {};
+    const rows = [
+      ['rating', 'count'],
+      [5, dist[5] || 0],
+      [4, dist[4] || 0],
+      [3, dist[3] || 0],
+      [2, dist[2] || 0],
+      [1, dist[1] || 0],
+    ];
+    downloadCSV(`dashboard_satisfaction_distribution_${start}_to_${end}.csv`, rows);
+  }
+
+  async function exportAgentWorkloadCSV() {
+    const res = await jget(`${API}/agents`);
+    const agents = res.data || res || [];
+    const rows = [
+      ['agent_id', 'user_id', 'name', 'department', 'skills', 'current_load', 'max_concurrent', 'status', 'online'],
+      ...agents.map(a => ([
+        a.id ?? '',
+        a.user_id ?? '',
+        a.user?.name ?? a.user?.username ?? '',
+        a.department ?? '',
+        a.skills ?? '',
+        a.current_load ?? 0,
+        a.max_concurrent ?? '',
+        a.status ?? '',
+        a.online ?? '',
+      ])),
+    ];
+    downloadCSV('agent_workload.csv', rows);
+  }
+
+  async function exportPlatformStatsCSV() {
+    const platforms = await jget(`${API_V1}/messages/platforms`);
+    const rows = [
+      ['platform', 'count'],
+      ...Object.entries(platforms || {}).map(([k, v]) => [k, v]),
+    ];
+    downloadCSV('platform_stats.csv', rows);
   }
 
   // 工单
@@ -714,7 +843,8 @@
 
   async function loadSatisfactionStats() {
     try {
-      const res = await jget(`${API}/satisfactions/stats`);
+      const { start, end } = getSatisfactionStatsRange();
+      const res = await jget(`${API}/satisfactions/stats` + buildQuery({ date_from: start, date_to: end }));
 
       $('#satisfaction_total_count').textContent = res.total_ratings || 0;
       $('#satisfaction_avg_rating').textContent = res.average_rating ? res.average_rating.toFixed(2) : '-';
@@ -845,28 +975,20 @@
 
     satisfactionCharts.trend = echarts.init(chartDom);
 
+    const { start, end } = getSatisfactionStatsRange();
     const trendData = statsData.trend_data || [];
+    const byDate = new Map(trendData.map(item => [item.date, item]));
+    const dateKeys = enumerateDates(start, end);
 
-    // 如果没有趋势数据，生成模拟数据
-    let dates, counts, avgRatings;
-    if (trendData.length === 0) {
-      // 生成最近7天的模拟数据
-      dates = [];
-      counts = [];
-      avgRatings = [];
-
-      for (let i = 6; i >= 0; i--) {
-        const date = new Date();
-        date.setDate(date.getDate() - i);
-        dates.push((date.getMonth() + 1) + '/' + date.getDate());
-        counts.push(Math.floor(Math.random() * 20) + 5);
-        avgRatings.push((Math.random() * 2 + 3).toFixed(1)); // 3-5星之间
-      }
-    } else {
-      dates = trendData.map(item => new Date(item.date).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }));
-      counts = trendData.map(item => item.count);
-      avgRatings = trendData.map(item => item.average_rating.toFixed(1));
-    }
+    const dates = dateKeys.map(d => {
+      const dt = new Date(d + 'T00:00:00');
+      return (dt.getMonth() + 1) + '/' + dt.getDate();
+    });
+    const counts = dateKeys.map(d => (byDate.get(d)?.count) ?? 0);
+    const avgRatings = dateKeys.map(d => {
+      const v = byDate.get(d)?.average_rating;
+      return (typeof v === 'number') ? Number(v.toFixed(1)) : null;
+    });
 
     const option = {
       tooltip: {
@@ -1514,6 +1636,38 @@
   });
   $('#btn_automations_refresh')?.addEventListener('click', () => loadAutomations());
 
+  // === CSV Export ===
+  $('#btn_export_ticket_trend_csv')?.addEventListener('click', async () => {
+    try { await exportTicketTrendCSV(); } catch (e) { alert('导出失败: ' + e.message); }
+  });
+  $('#btn_export_dashboard_satisfaction_csv')?.addEventListener('click', async () => {
+    try { await exportDashboardSatisfactionDistributionCSV(); } catch (e) { alert('导出失败: ' + e.message); }
+  });
+  $('#btn_export_agent_workload_csv')?.addEventListener('click', async () => {
+    try { await exportAgentWorkloadCSV(); } catch (e) { alert('导出失败: ' + e.message); }
+  });
+  $('#btn_export_platform_stats_csv')?.addEventListener('click', async () => {
+    try { await exportPlatformStatsCSV(); } catch (e) { alert('导出失败: ' + e.message); }
+  });
+  $('#btn_export_satisfaction_trend_csv')?.addEventListener('click', async () => {
+    try { await exportSatisfactionTrendCSV(); } catch (e) { alert('导出失败: ' + e.message); }
+  });
+  $('#btn_export_satisfaction_csv')?.addEventListener('click', async () => {
+    try { await exportSatisfactionDistributionCSV(); } catch (e) { alert('导出失败: ' + e.message); }
+  });
+  $('#btn_export_satisfaction_category_csv')?.addEventListener('click', async () => {
+    try { await exportSatisfactionCategoryCSV(); } catch (e) { alert('导出失败: ' + e.message); }
+  });
+  $('#btn_export_sla_trend_csv')?.addEventListener('click', async () => {
+    try { await exportSLATrendCSV(); } catch (e) { alert('导出失败: ' + e.message); }
+  });
+  $('#btn_export_sla_violation_type_csv')?.addEventListener('click', async () => {
+    try { await exportSLAViolationTypeCSV(); } catch (e) { alert('导出失败: ' + e.message); }
+  });
+  $('#btn_export_sla_violation_priority_csv')?.addEventListener('click', async () => {
+    try { await exportSLAViolationPriorityCSV(); } catch (e) { alert('导出失败: ' + e.message); }
+  });
+
   // 初始化
   loadDashboard();
   loadTickets();
@@ -1637,6 +1791,79 @@
     }
   }
 
+  async function exportSatisfactionTrendCSV() {
+    const { start, end } = getSatisfactionStatsRange();
+    const res = await jget(`${API}/satisfactions/stats` + buildQuery({ date_from: start, date_to: end }));
+    const byDate = new Map((res.trend_data || []).map(item => [item.date, item]));
+    const dateKeys = enumerateDates(start, end);
+    const rows = [
+      ['date', 'count', 'average_rating'],
+      ...dateKeys.map(d => {
+        const item = byDate.get(d);
+        const avg = (typeof item?.average_rating === 'number') ? item.average_rating.toFixed(2) : '';
+        return [d, item?.count ?? 0, avg];
+      }),
+    ];
+    downloadCSV(`satisfaction_trend_${start}_to_${end}.csv`, rows);
+  }
+
+  async function exportSatisfactionDistributionCSV() {
+    const { start, end } = getSatisfactionStatsRange();
+    const res = await jget(`${API}/satisfactions/stats` + buildQuery({ date_from: start, date_to: end }));
+    const dist = res.rating_distribution || {};
+    const rows = [
+      ['rating', 'count'],
+      [5, dist[5] || 0],
+      [4, dist[4] || 0],
+      [3, dist[3] || 0],
+      [2, dist[2] || 0],
+      [1, dist[1] || 0],
+    ];
+    downloadCSV(`satisfaction_distribution_${start}_to_${end}.csv`, rows);
+  }
+
+  async function exportSatisfactionCategoryCSV() {
+    const { start, end } = getSatisfactionStatsRange();
+    const res = await jget(`${API}/satisfactions/stats` + buildQuery({ date_from: start, date_to: end }));
+    const cats = res.category_stats || {};
+    const rows = [
+      ['category', 'count', 'average_rating'],
+      ...Object.entries(cats).map(([k, v]) => [k, v?.count ?? 0, (typeof v?.average_rating === 'number') ? v.average_rating.toFixed(2) : '']),
+    ];
+    downloadCSV(`satisfaction_category_${start}_to_${end}.csv`, rows);
+  }
+
+  async function exportSLATrendCSV() {
+    const stats = await jget(`${API}/sla/stats`);
+    const trend = stats.trend_data || [];
+    const rows = [
+      ['date', 'total_tickets', 'violations', 'compliance_rate'],
+      ...trend.map(item => [item.date, item.total_tickets ?? 0, item.violations ?? 0, (typeof item.compliance_rate === 'number') ? item.compliance_rate.toFixed(2) : item.compliance_rate]),
+    ];
+    const { start, end } = getLastNDaysRange(7);
+    downloadCSV(`sla_trend_${start}_to_${end}.csv`, rows);
+  }
+
+  async function exportSLAViolationTypeCSV() {
+    const stats = await jget(`${API}/sla/stats`);
+    const byType = stats.violations_by_type || {};
+    const rows = [
+      ['violation_type', 'count'],
+      ...Object.entries(byType).map(([k, v]) => [k, v]),
+    ];
+    downloadCSV(`sla_violations_by_type.csv`, rows);
+  }
+
+  async function exportSLAViolationPriorityCSV() {
+    const stats = await jget(`${API}/sla/stats`);
+    const byPri = stats.violations_by_priority || {};
+    const rows = [
+      ['priority', 'count'],
+      ...Object.entries(byPri).map(([k, v]) => [k, v]),
+    ];
+    downloadCSV(`sla_violations_by_priority.csv`, rows);
+  }
+
   // 初始化SLA图表
   async function initializeSLACharts(statsData) {
     if (!window.echarts) return;
@@ -1658,32 +1885,20 @@
     slaCharts.complianceTrend = echarts.init(chartDom);
 
     const trendData = statsData.trend_data || [];
+    const byDate = new Map(trendData.map(item => [item.date, item]));
+    const { start, end } = getLastNDaysRange(7);
+    const dateKeys = enumerateDates(start, end);
 
-    // 如果没有数据，生成模拟数据
-    let dates, totalTickets, violations, complianceRates;
-    if (trendData.length === 0) {
-      dates = [];
-      totalTickets = [];
-      violations = [];
-      complianceRates = [];
-
-      for (let i = 6; i >= 0; i--) {
-        const date = new Date();
-        date.setDate(date.getDate() - i);
-        dates.push((date.getMonth() + 1) + '/' + date.getDate());
-
-        const tickets = Math.floor(Math.random() * 50) + 10;
-        const viol = Math.floor(Math.random() * 5);
-        totalTickets.push(tickets);
-        violations.push(viol);
-        complianceRates.push(tickets > 0 ? ((tickets - viol) / tickets * 100).toFixed(1) : 100);
-      }
-    } else {
-      dates = trendData.map(item => new Date(item.date).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }));
-      totalTickets = trendData.map(item => item.total_tickets);
-      violations = trendData.map(item => item.violations);
-      complianceRates = trendData.map(item => item.compliance_rate.toFixed(1));
-    }
+    const dates = dateKeys.map(d => {
+      const dt = new Date(d + 'T00:00:00');
+      return (dt.getMonth() + 1) + '/' + dt.getDate();
+    });
+    const totalTickets = dateKeys.map(d => (byDate.get(d)?.total_tickets) ?? 0);
+    const violations = dateKeys.map(d => (byDate.get(d)?.violations) ?? 0);
+    const complianceRates = dateKeys.map(d => {
+      const v = byDate.get(d)?.compliance_rate;
+      return (typeof v === 'number') ? Number(v.toFixed(1)) : 100.0;
+    });
 
     const option = {
       tooltip: {

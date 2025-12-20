@@ -40,3 +40,7 @@ bin/
 apps/demo-web/sdk/servify-sdk.esm.js
 apps/demo-web/sdk/servify-sdk.umd.js
 apps/demo-web/sdk/index.d.ts
+
+# Upload 存储（运行时/测试产物）
+uploads/
+apps/server/uploads/

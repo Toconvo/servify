@@ -1,27 +1,51 @@
-# Competitive Feature TODO
+# Servify TODO
 
-参考成熟客服产品（Zendesk、Freshdesk、ServiceNow）的能力，为 Servify 制定的差距清单。每一项都需要评估数据模型、API 以及前端交互的影响后再排期。
+面向“能跑 + 可验收 + 可持续迭代”的待办清单（工程优先，其次产品能力对标）。
 
-## Zendesk Support Suite
-- [x] **全渠道代理工作台**：统一接入邮件、聊天(IM)、语音和社交渠道，提供单一队列和会话上下文。
-- [x] **SLA 策略引擎**：支持按优先级/客户级别配置多个 SLA 目标，并提供违约告警和计时展示。
-- [x] **触发器 & 自动化库**：实现基于事件/条件的通知、字段更新、分派等自动操作，可供管理员配置。
-- [x] **宏与回复模板**：允许客服创建可复用回复片段，支持变量和多语言。
-- [x] **CSAT 调查流程**：在工单关闭后自动发送满意度调查，记录结果并生成趋势报告。
-- [x] **应用市场集成点**：设计扩展 API/iframe 容器，便于引入外部 CRM 或计费系统。
+## 当前进度（快速结论）
+- Go workspace：`go.work` 仅包含 `./apps/server`（根目录不能直接 `go test ./...`）
+- 单测：`go -C apps/server test ./...` 通过
+- 测试脚本：`./scripts/run-tests.sh` 通过（覆盖率阈值 >= 20%）
+- 代码内未发现额外 TODO/FIXME 标记（目前只在本文件中）
 
-## Freshdesk
-- [ ] **自助服务门户 / 知识库**：面向客户开放 FAQ、指南和搜索，支持分类、权限和反馈。
-- [ ] **Freddy AI 风格建议**：在工单界面提供 AI 建议回复、意图分类或相似工单推荐。
-- [ ] **动态表单与自定义字段**：根据工单类别/客户类型展示不同字段，支持校验和自动填充。
-- [ ] **工作流自动化 (Scenario Automations)**：一次性对多工单执行预设操作（状态、标签、通知）。
-- [ ] **多语言 & 品牌门户**：为不同业务线配置独立门户主题、语言包和域名。
-- [ ] **客服绩效游戏化**：引入徽章、积分、排行榜等机制，驱动客服 KPI。
+## P0（立刻做，保证 CI/本地体验）
+- [x] 提升覆盖率到 >= 20%，让 `./scripts/run-tests.sh` 通过
+  - 验收：脚本末尾显示 `✅ Coverage target achieved!`
+  - 建议：补齐 `apps/server/internal/handlers` 中核心管理 API（tickets/customers/agents/...）的 httptest 覆盖
+- [x] 统一/澄清测试入口
+  - 验收：README 中明确 `go test` 的正确方式（例如 `go -C apps/server test ./...`）并避免误导
+  - 进度：README 已修正贡献指南中的测试命令
 
-## ServiceNow
-- [ ] **Incident/Problem/Change ITIL 流程**：支持工单关联问题单、变更单，并提供统一流程视图。
-- [ ] **CMDB 关联能力**：维护配置项资产，并在工单中引用，便于影响分析和升级。
-- [ ] **Virtual Agent**：建设可配置的对话机器人，提供自助排障并与工单系统互通。
-- [ ] **Performance Analytics**：实现可配置的 KPI 面板、时间序列分析和阈值告警。
-- [ ] **服务目录 & 请求履约**：提供可申请服务项（如账户开通），自动拆解为任务并跟踪 SLA。
-- [ ] **审批与合规审计轨迹**：为高风险操作引入多级审批，并记录完整审计日志。
+## P1（功能完善：后台管理/运营能力）
+- [ ] Admin Dashboard：图表可视化（趋势、分布）与导出（CSV）
+  - 进度：仪表板图表已改为调用后端接口（工单趋势 `/api/statistics/time-range`；满意度 `/api/satisfactions/stats`；客服列表 `/api/agents`；平台 `/api/v1/messages/platforms`），并补齐 CSV 导出按钮
+- [ ] 工单：批量操作（状态/标签/指派）+ 工单转移（session/ticket transfer 的端到端流程）
+- [ ] 权限：细粒度 RBAC（admin/agent 之外的资源级权限）
+- [ ] 自定义字段/动态表单：字段配置（校验、条件展示）与查询/导出联动
+
+## P2（产品能力对标：Competitive Roadmap）
+参考成熟客服产品（Zendesk、Freshdesk、ServiceNow）的能力差距清单（需评估数据模型、API 与前端交互后排期）。
+
+### Zendesk Support Suite（已覆盖/已落地）
+- [x] 全渠道代理工作台（WebSocket/平台路由/会话上下文）
+- [x] SLA 策略引擎（配置/违约检测与处理）
+- [x] 触发器 & 自动化（基于事件的规则）
+- [x] 宏与回复模板
+- [x] CSAT 调查流程
+- [x] 应用市场集成点
+
+### Freshdesk（待补齐）
+- [ ] 自助服务门户 / 知识库（面向客户的 FAQ/指南/搜索/反馈）
+- [ ] AI 建议（建议回复/意图分类/相似工单）
+- [ ] 动态表单与自定义字段
+- [ ] 工作流自动化（批处理/场景自动化）
+- [ ] 多语言 & 品牌门户
+- [ ] 绩效游戏化（徽章/积分/排行榜）
+
+### ServiceNow（待补齐）
+- [ ] Incident/Problem/Change（ITIL 流程联动）
+- [ ] CMDB 关联
+- [ ] Virtual Agent（可配置对话机器人）
+- [ ] Performance Analytics（可配置 KPI + 告警）
+- [ ] 服务目录 & 请求履约
+- [ ] 审批与合规审计轨迹
