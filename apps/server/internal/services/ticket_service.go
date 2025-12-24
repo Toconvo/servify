@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"servify/apps/server/internal/models"
@@ -79,6 +81,27 @@ type TicketListRequest struct {
 	Search     string   `form:"search"`
 	SortBy     string   `form:"sort_by,default=created_at"`
 	SortOrder  string   `form:"sort_order,default=desc"`
+}
+
+// TicketBulkUpdateRequest 批量更新工单请求（状态/标签/指派）
+type TicketBulkUpdateRequest struct {
+	TicketIDs     []uint   `json:"ticket_ids" binding:"required,min=1"`
+	Status        *string  `json:"status"`
+	SetTags       *string  `json:"set_tags"` // 覆盖式设置（逗号分隔）
+	AddTags       []string `json:"add_tags"`
+	RemoveTags    []string `json:"remove_tags"`
+	AgentID       *uint    `json:"agent_id"` // 指派/转移到某个客服（agent.user_id）
+	UnassignAgent bool     `json:"unassign_agent"`
+}
+
+type TicketBulkUpdateFailure struct {
+	TicketID uint   `json:"ticket_id"`
+	Error    string `json:"error"`
+}
+
+type TicketBulkUpdateResult struct {
+	Updated []uint                   `json:"updated"`
+	Failed  []TicketBulkUpdateFailure `json:"failed"`
 }
 
 // CreateTicket 创建工单
@@ -295,6 +318,17 @@ func (s *TicketService) ListTickets(ctx context.Context, req *TicketListRequest)
 
 // AssignTicket 分配工单给客服
 func (s *TicketService) AssignTicket(ctx context.Context, ticketID uint, agentID uint, assignerID uint) error {
+	// Load current ticket state (for transfer/unassign semantics)
+	var ticket models.Ticket
+	if err := s.db.Select("id", "status", "agent_id").First(&ticket, ticketID).Error; err != nil {
+		return fmt.Errorf("ticket not found: %w", err)
+	}
+
+	// No-op if already assigned to the same agent
+	if ticket.AgentID != nil && *ticket.AgentID == agentID {
+		return nil
+	}
+
 	// 验证客服是否存在且可用
 	var agent models.Agent
 	if err := s.db.Where("user_id = ? AND status IN ?", agentID, []string{"online", "busy"}).First(&agent).Error; err != nil {
@@ -306,34 +340,191 @@ func (s *TicketService) AssignTicket(ctx context.Context, ticketID uint, agentID
 		return fmt.Errorf("agent is at maximum capacity")
 	}
 
-	// 更新工单
-	updates := map[string]interface{}{
-		"agent_id": agentID,
-		"status":   "assigned",
+	fromStatus := ticket.Status
+	toStatus := ticket.Status
+	if fromStatus == "open" || fromStatus == "" {
+		toStatus = "assigned"
 	}
 
-	if err := s.db.Model(&models.Ticket{}).Where("id = ?", ticketID).Updates(updates).Error; err != nil {
-		return fmt.Errorf("failed to assign ticket: %w", err)
+	// Transfer implies decrementing previous agent load
+	var prevAgentID *uint = ticket.AgentID
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if prevAgentID != nil {
+			// Best-effort decrement; never below 0
+			if err := tx.Exec(`UPDATE agents SET current_load = CASE WHEN current_load > 0 THEN current_load - 1 ELSE 0 END WHERE user_id = ?`, *prevAgentID).Error; err != nil {
+				return fmt.Errorf("failed to decrement previous agent load: %w", err)
+			}
+		}
+
+		updates := map[string]interface{}{
+			"agent_id": agentID,
+		}
+		if toStatus != fromStatus {
+			updates["status"] = toStatus
+		}
+		if err := tx.Model(&models.Ticket{}).Where("id = ?", ticketID).Updates(updates).Error; err != nil {
+			return fmt.Errorf("failed to assign ticket: %w", err)
+		}
+
+		if err := tx.Model(&models.Agent{}).Where("user_id = ?", agentID).UpdateColumn("current_load", gorm.Expr("current_load + 1")).Error; err != nil {
+			return fmt.Errorf("failed to increment agent load: %w", err)
+		}
+
+		// 记录状态变更（若仅转移且状态不变，用同状态记录原因）
+		reason := fmt.Sprintf("指派给客服 %d", agentID)
+		if prevAgentID != nil {
+			reason = fmt.Sprintf("工单转移至客服 %d", agentID)
+		}
+		s.recordStatusChangeWithDB(tx, ticketID, assignerID, fromStatus, toStatus, reason)
+		return nil
+	})
+	if err != nil {
+		return err
 	}
-
-	// 更新客服负载
-	s.db.Model(&models.Agent{}).Where("user_id = ?", agentID).UpdateColumn("current_load", gorm.Expr("current_load + 1"))
-
-	// 记录状态变更
-	s.recordStatusChange(ticketID, assignerID, "open", "assigned", fmt.Sprintf("分配给客服 %d", agentID))
 
 	s.logger.Infof("Assigned ticket %d to agent %d", ticketID, agentID)
 
-	// 分配后标记首次响应 SLA
-	ticket, err := s.GetTicketByID(ctx, ticketID)
+	// 分配/转移后做 SLA 处理
+	updatedTicket, err := s.GetTicketByID(ctx, ticketID)
 	if err == nil {
-		s.resolveTicketSLAViolations(ctx, ticket.ID, []string{"first_response"})
-		s.evaluateTicketSLA(ctx, ticket, false, true)
+		if prevAgentID == nil {
+			s.resolveTicketSLAViolations(ctx, updatedTicket.ID, []string{"first_response"})
+		}
+		s.evaluateTicketSLA(ctx, updatedTicket, fromStatus != toStatus, true)
 	} else {
 		s.logger.Warnf("Failed to fetch ticket %d after assignment for SLA evaluation: %v", ticketID, err)
 	}
 
 	return nil
+}
+
+// UnassignTicket 取消工单指派（将 agent_id 置空）
+func (s *TicketService) UnassignTicket(ctx context.Context, ticketID uint, operatorID uint, reason string) error {
+	var ticket models.Ticket
+	if err := s.db.Select("id", "status", "agent_id").First(&ticket, ticketID).Error; err != nil {
+		return fmt.Errorf("ticket not found: %w", err)
+	}
+	if ticket.AgentID == nil {
+		return nil
+	}
+	fromStatus := ticket.Status
+	toStatus := ticket.Status
+	if fromStatus == "assigned" || fromStatus == "in_progress" || fromStatus == "" {
+		toStatus = "open"
+	}
+	if reason == "" {
+		reason = "取消指派"
+	}
+
+	prevAgent := *ticket.AgentID
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`UPDATE agents SET current_load = CASE WHEN current_load > 0 THEN current_load - 1 ELSE 0 END WHERE user_id = ?`, prevAgent).Error; err != nil {
+			return fmt.Errorf("failed to decrement agent load: %w", err)
+		}
+		updates := map[string]interface{}{
+			"agent_id": nil,
+		}
+		if toStatus != fromStatus {
+			updates["status"] = toStatus
+		}
+		if err := tx.Model(&models.Ticket{}).Where("id = ?", ticketID).Updates(updates).Error; err != nil {
+			return fmt.Errorf("failed to unassign ticket: %w", err)
+		}
+		s.recordStatusChangeWithDB(tx, ticketID, operatorID, fromStatus, toStatus, reason)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	updatedTicket, err := s.GetTicketByID(ctx, ticketID)
+	if err == nil {
+		s.evaluateTicketSLA(ctx, updatedTicket, fromStatus != toStatus, true)
+	} else {
+		s.logger.Warnf("Failed to fetch ticket %d after unassignment for SLA evaluation: %v", ticketID, err)
+	}
+	return nil
+}
+
+// BulkUpdateTickets 批量更新工单（支持：状态、标签、指派/取消指派）
+func (s *TicketService) BulkUpdateTickets(ctx context.Context, req *TicketBulkUpdateRequest, userID uint) (*TicketBulkUpdateResult, error) {
+	if req == nil {
+		return nil, fmt.Errorf("nil request")
+	}
+	if len(req.TicketIDs) == 0 {
+		return nil, fmt.Errorf("ticket_ids is required")
+	}
+	if req.UnassignAgent && req.AgentID != nil {
+		return nil, fmt.Errorf("cannot set both unassign_agent and agent_id")
+	}
+
+	ids := make([]uint, 0, len(req.TicketIDs))
+	seen := make(map[uint]struct{}, len(req.TicketIDs))
+	for _, id := range req.TicketIDs {
+		if id == 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("no valid ticket ids")
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+
+	out := &TicketBulkUpdateResult{}
+	for _, ticketID := range ids {
+		// 1) agent assignment changes
+		if req.UnassignAgent {
+			if err := s.UnassignTicket(ctx, ticketID, userID, "批量取消指派"); err != nil {
+				out.Failed = append(out.Failed, TicketBulkUpdateFailure{TicketID: ticketID, Error: err.Error()})
+				continue
+			}
+		} else if req.AgentID != nil {
+			if err := s.AssignTicket(ctx, ticketID, *req.AgentID, userID); err != nil {
+				out.Failed = append(out.Failed, TicketBulkUpdateFailure{TicketID: ticketID, Error: err.Error()})
+				continue
+			}
+		}
+
+		// 2) tags/status changes (via UpdateTicket to keep side-effects consistent)
+		needUpdate := req.Status != nil || req.SetTags != nil || len(req.AddTags) > 0 || len(req.RemoveTags) > 0
+		if !needUpdate {
+			out.Updated = append(out.Updated, ticketID)
+			continue
+		}
+
+		updateReq := &TicketUpdateRequest{
+			Status: req.Status,
+		}
+
+		if req.SetTags != nil {
+			tags := normalizeTags(splitTags(*req.SetTags))
+			joined := strings.Join(tags, ",")
+			updateReq.Tags = &joined
+		} else if len(req.AddTags) > 0 || len(req.RemoveTags) > 0 {
+			var cur models.Ticket
+			if err := s.db.Select("id", "tags").First(&cur, ticketID).Error; err != nil {
+				out.Failed = append(out.Failed, TicketBulkUpdateFailure{TicketID: ticketID, Error: fmt.Sprintf("ticket not found: %v", err)})
+				continue
+			}
+			newTags := applyTagDelta(cur.Tags, req.AddTags, req.RemoveTags)
+			joined := strings.Join(newTags, ",")
+			updateReq.Tags = &joined
+		}
+
+		if _, err := s.UpdateTicket(ctx, ticketID, updateReq, userID); err != nil {
+			out.Failed = append(out.Failed, TicketBulkUpdateFailure{TicketID: ticketID, Error: err.Error()})
+			continue
+		}
+
+		out.Updated = append(out.Updated, ticketID)
+	}
+
+	return out, nil
 }
 
 // AddComment 添加工单评论
@@ -408,6 +599,64 @@ func (s *TicketService) CloseTicket(ctx context.Context, ticketID uint, userID u
 	return nil
 }
 
+func splitTags(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+func normalizeTags(tags []string) []string {
+	if len(tags) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(tags))
+	for _, t := range tags {
+		t = strings.TrimSpace(t)
+		if t == "" {
+			continue
+		}
+		key := strings.ToLower(t)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func applyTagDelta(current string, add []string, remove []string) []string {
+	cur := normalizeTags(splitTags(current))
+	m := make(map[string]string, len(cur))
+	for _, t := range cur {
+		m[strings.ToLower(t)] = t
+	}
+	for _, t := range normalizeTags(add) {
+		m[strings.ToLower(t)] = t
+	}
+	for _, t := range normalizeTags(remove) {
+		delete(m, strings.ToLower(t))
+	}
+	out := make([]string, 0, len(m))
+	for _, v := range m {
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // autoAssignAgent 自动分配客服
 func (s *TicketService) autoAssignAgent(ticketID uint) {
 	// 查找可用的客服（在线且负载最低）
@@ -431,6 +680,10 @@ func (s *TicketService) autoAssignAgent(ticketID uint) {
 
 // recordStatusChange 记录状态变更历史
 func (s *TicketService) recordStatusChange(ticketID uint, userID uint, fromStatus, toStatus, reason string) {
+	s.recordStatusChangeWithDB(s.db, ticketID, userID, fromStatus, toStatus, reason)
+}
+
+func (s *TicketService) recordStatusChangeWithDB(db *gorm.DB, ticketID uint, userID uint, fromStatus, toStatus, reason string) {
 	statusChange := &models.TicketStatus{
 		TicketID:   ticketID,
 		UserID:     userID,
@@ -439,7 +692,11 @@ func (s *TicketService) recordStatusChange(ticketID uint, userID uint, fromStatu
 		Reason:     reason,
 	}
 
-	if err := s.db.Create(statusChange).Error; err != nil {
+	if db == nil {
+		db = s.db
+	}
+
+	if err := db.Create(statusChange).Error; err != nil {
 		s.logger.Errorf("Failed to record status change for ticket %d: %v", ticketID, err)
 	}
 }

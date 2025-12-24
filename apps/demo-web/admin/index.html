@@ -22,6 +22,12 @@
       <button data-tab="integrations">应用市场</button>
       <button data-tab="ai">AI 状态</button>
     </nav>
+    <div class="auth-controls">
+      <input id="auth_token" type="password" placeholder="JWT Token（可用 CLI 生成）" autocomplete="off" />
+      <button id="btn_save_token" type="button">保存</button>
+      <button id="btn_clear_token" type="button">清除</button>
+      <small id="auth_status"></small>
+    </div>
   </header>
 
   <main>
@@ -272,9 +278,34 @@
           </div>
         </div>
 
+        <div class="bulk-controls">
+          <select id="bulk_ticket_status">
+            <option value="">批量状态（不修改）</option>
+            <option value="open">open</option>
+            <option value="assigned">assigned</option>
+            <option value="in_progress">in_progress</option>
+            <option value="resolved">resolved</option>
+            <option value="closed">closed</option>
+          </select>
+          <select id="bulk_ticket_agent">
+            <option value="">批量指派（不修改）</option>
+          </select>
+          <label class="checkbox">
+            <input type="checkbox" id="bulk_ticket_unassign" />
+            取消指派
+          </label>
+          <input id="bulk_ticket_add_tags" placeholder="添加标签（逗号分隔）" />
+          <input id="bulk_ticket_remove_tags" placeholder="移除标签（逗号分隔）" />
+          <button id="btn_ticket_bulk_apply" type="button">批量应用</button>
+          <small id="ticket_bulk_msg"></small>
+        </div>
+
         <table id="tbl_tickets">
           <thead>
-            <tr><th>ID</th><th>标题</th><th>状态</th><th>优先级</th><th>客户</th><th>操作</th></tr>
+            <tr>
+              <th style="width:36px;"><input type="checkbox" id="tickets_select_all" /></th>
+              <th>ID</th><th>标题</th><th>状态</th><th>优先级</th><th>客户</th><th>操作</th>
+            </tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -286,10 +317,11 @@
           <input name="customer_id" placeholder="客户ID(可选)" />
           <select name="priority">
             <option value="low">低</option>
-            <option value="medium" selected>中</option>
+            <option value="normal" selected>正常</option>
             <option value="high">高</option>
+            <option value="urgent">紧急</option>
           </select>
-          <textarea name="content" placeholder="问题描述"></textarea>
+          <textarea name="description" placeholder="问题描述"></textarea>
           <button type="submit">创建</button>
         </form>
       </div>

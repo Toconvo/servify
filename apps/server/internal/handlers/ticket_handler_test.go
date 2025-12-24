@@ -65,12 +65,19 @@ func TestTicketHandler_Create_Get_List_Assign(t *testing.T) {
 	if err := db.Create(&models.Agent{UserID: 2, Status: "online", MaxConcurrent: 5, CurrentLoad: 0}).Error; err != nil {
 		t.Fatalf("seed agent: %v", err)
 	}
+	if err := db.Create(&models.User{ID: 3, Username: "a2", Name: "a2", Email: "a2@example.com", Role: "agent"}).Error; err != nil {
+		t.Fatalf("seed agent user 2: %v", err)
+	}
+	if err := db.Create(&models.Agent{UserID: 3, Status: "online", MaxConcurrent: 5, CurrentLoad: 0}).Error; err != nil {
+		t.Fatalf("seed agent 2: %v", err)
+	}
 
 	ticketSvc := services.NewTicketService(db, logger, nil)
 	h := NewTicketHandler(ticketSvc, logger)
 
 	r := gin.New()
 	r.POST("/api/tickets", h.CreateTicket)
+	r.POST("/api/tickets/bulk", h.BulkUpdateTickets)
 	r.GET("/api/tickets", h.ListTickets)
 	r.GET("/api/tickets/:id", h.GetTicket)
 	r.POST("/api/tickets/:id/assign", h.AssignTicket)
@@ -124,6 +131,82 @@ func TestTicketHandler_Create_Get_List_Assign(t *testing.T) {
 	r.ServeHTTP(w4, req4)
 	if w4.Code != http.StatusOK {
 		t.Fatalf("assign status=%d body=%s", w4.Code, w4.Body.String())
+	}
+
+	// Re-assign (transfer) to another agent; should decrement old load and increment new load.
+	assignBody2 := map[string]any{"agent_id": 3}
+	bTransfer, _ := json.Marshal(assignBody2)
+	w4b := httptest.NewRecorder()
+	req4b, _ := http.NewRequest(http.MethodPost, "/api/tickets/"+toStr(created.ID)+"/assign", bytes.NewReader(bTransfer))
+	req4b.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w4b, req4b)
+	if w4b.Code != http.StatusOK {
+		t.Fatalf("transfer assign status=%d body=%s", w4b.Code, w4b.Body.String())
+	}
+
+	var agent2 models.Agent
+	if err := db.Where("user_id = ?", 2).First(&agent2).Error; err != nil {
+		t.Fatalf("load agent 2: %v", err)
+	}
+	var agent3 models.Agent
+	if err := db.Where("user_id = ?", 3).First(&agent3).Error; err != nil {
+		t.Fatalf("load agent 3: %v", err)
+	}
+	if agent2.CurrentLoad != 0 {
+		t.Fatalf("expected agent 2 load decremented to 0, got %d", agent2.CurrentLoad)
+	}
+	if agent3.CurrentLoad != 1 {
+		t.Fatalf("expected agent 3 load incremented to 1, got %d", agent3.CurrentLoad)
+	}
+
+	// Bulk update: add tags + set status
+	bulkBody := map[string]any{
+		"ticket_ids":  []uint{created.ID},
+		"status":     "resolved",
+		"add_tags":   []string{"vip", "urgent"},
+		"remove_tags": []string{"non-existent"},
+	}
+	b3, _ := json.Marshal(bulkBody)
+	w5 := httptest.NewRecorder()
+	req5, _ := http.NewRequest(http.MethodPost, "/api/tickets/bulk", bytes.NewReader(b3))
+	req5.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w5, req5)
+	if w5.Code != http.StatusOK {
+		t.Fatalf("bulk status=%d body=%s", w5.Code, w5.Body.String())
+	}
+
+	var updated models.Ticket
+	if err := db.First(&updated, created.ID).Error; err != nil {
+		t.Fatalf("load ticket after bulk: %v", err)
+	}
+	if updated.Status != "resolved" {
+		t.Fatalf("expected status resolved, got %q", updated.Status)
+	}
+	if updated.Tags == "" {
+		t.Fatalf("expected tags to be set after bulk update")
+	}
+
+	// Bulk unassign
+	bulkUnassign := map[string]any{
+		"ticket_ids":      []uint{created.ID},
+		"unassign_agent":  true,
+		"remove_tags":     []string{"vip"},
+		"add_tags":        []string{"after-unassign"},
+	}
+	b4, _ := json.Marshal(bulkUnassign)
+	w6 := httptest.NewRecorder()
+	req6, _ := http.NewRequest(http.MethodPost, "/api/tickets/bulk", bytes.NewReader(b4))
+	req6.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w6, req6)
+	if w6.Code != http.StatusOK {
+		t.Fatalf("bulk unassign status=%d body=%s", w6.Code, w6.Body.String())
+	}
+	var after models.Ticket
+	if err := db.First(&after, created.ID).Error; err != nil {
+		t.Fatalf("load ticket after bulk unassign: %v", err)
+	}
+	if after.AgentID != nil {
+		t.Fatalf("expected agent_id to be nil after unassign")
 	}
 }
 

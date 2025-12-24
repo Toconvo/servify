@@ -17,9 +17,10 @@
   - 进度：README 已修正贡献指南中的测试命令
 
 ## P1（功能完善：后台管理/运营能力）
-- [ ] Admin Dashboard：图表可视化（趋势、分布）与导出（CSV）
-  - 进度：仪表板图表已改为调用后端接口（工单趋势 `/api/statistics/time-range`；满意度 `/api/satisfactions/stats`；客服列表 `/api/agents`；平台 `/api/v1/messages/platforms`），并补齐 CSV 导出按钮
+- [x] Admin Dashboard：图表可视化（趋势、分布）与导出（CSV）
+  - 验收：Dashboard 页 4 个图表正常渲染，且支持 CSV 导出（工单趋势/满意度分布/客服负载/平台分布）
 - [ ] 工单：批量操作（状态/标签/指派）+ 工单转移（session/ticket transfer 的端到端流程）
+  - 进度：已新增后端 `/api/tickets/bulk`，并在 Tickets 页提供勾选 + 批量修改 UI（状态/标签/指派/取消指派）
 - [ ] 权限：细粒度 RBAC（admin/agent 之外的资源级权限）
 - [ ] 自定义字段/动态表单：字段配置（校验、条件展示）与查询/导出联动
 

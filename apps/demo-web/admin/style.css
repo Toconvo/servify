@@ -4,6 +4,9 @@ header { display: flex; align-items: center; justify-content: space-between; pad
 header h1 { margin: 0; font-size: 18px; }
 nav button { margin: 0 6px; padding: 6px 10px; border: 1px solid #ddd; background: #f8f8f8; cursor: pointer; border-radius: 6px; }
 nav button.active { background: #111; color: #fff; border-color: #111; }
+.auth-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.auth-controls input { width: 280px; max-width: 44vw; }
+.auth-controls small { color: #718096; }
 main { padding: 16px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .card { border: 1px solid #eee; border-radius: 8px; padding: 12px; background: #fff; }
@@ -162,6 +165,38 @@ footer { text-align: center; color: #777; font-size: 12px; padding: 10px 0 20px;
 
 .chart-panel > div[id$="-chart"] {
   border-radius: 8px;
+}
+
+.bulk-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 12px 0 8px 0;
+  padding: 10px;
+  border: 1px dashed #e2e8f0;
+  border-radius: 10px;
+  background: #fafcff;
+}
+
+.bulk-controls input {
+  min-width: 180px;
+}
+
+.bulk-controls select {
+  min-width: 180px;
+}
+
+.bulk-controls small {
+  color: #4a5568;
+}
+
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+  color: #2d3748;
 }
 
 @media (max-width: 768px) {

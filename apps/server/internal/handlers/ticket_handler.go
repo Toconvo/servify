@@ -398,11 +398,51 @@ func (h *TicketHandler) GetTicketStats(c *gin.Context) {
 	c.JSON(http.StatusOK, stats)
 }
 
+// BulkUpdateTickets 批量更新工单
+// @Summary 批量更新工单
+// @Description 批量更新工单（状态/标签/指派/取消指派）
+// @Tags 工单
+// @Accept json
+// @Produce json
+// @Param payload body services.TicketBulkUpdateRequest true "批量更新请求"
+// @Success 200 {object} services.TicketBulkUpdateResult
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/tickets/bulk [post]
+func (h *TicketHandler) BulkUpdateTickets(c *gin.Context) {
+	var req services.TicketBulkUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid request body",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	userID, exists := c.Get("user_id")
+	if !exists {
+		userID = uint(0)
+	}
+
+	result, err := h.ticketService.BulkUpdateTickets(c.Request.Context(), &req, userID.(uint))
+	if err != nil {
+		h.logger.Errorf("Failed to bulk update tickets: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Failed to bulk update tickets",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
 // RegisterTicketRoutes 注册工单相关路由
 func RegisterTicketRoutes(r *gin.RouterGroup, handler *TicketHandler) {
 	tickets := r.Group("/tickets")
 	{
 		tickets.POST("", handler.CreateTicket)
+		tickets.POST("/bulk", handler.BulkUpdateTickets)
 		tickets.GET("", handler.ListTickets)
 		tickets.GET("/stats", handler.GetTicketStats)
 		tickets.GET("/:id", handler.GetTicket)

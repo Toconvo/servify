@@ -3,6 +3,7 @@
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
   const API_V1 = '/api/v1';
   const API = '/api'; // 管理类 API
+  const AUTH_TOKEN_KEY = 'servify_admin_jwt';
 
   function setActive(tab){
     $$('#main nav button');
@@ -15,20 +16,57 @@
   $$('nav button').forEach(b => b.addEventListener('click', () => setActive(b.dataset.tab)));
 
   // 简易 fetch 封装
+  function getStoredToken(){
+    try { return localStorage.getItem(AUTH_TOKEN_KEY) || ''; } catch { return ''; }
+  }
+
+  function setStoredToken(token){
+    try {
+      if (!token) localStorage.removeItem(AUTH_TOKEN_KEY);
+      else localStorage.setItem(AUTH_TOKEN_KEY, token);
+    } catch {}
+  }
+
+  function normalizeBearerToken(token){
+    const t = String(token || '').trim();
+    if (!t) return '';
+    if (/^bearer\s+/i.test(t)) return 'Bearer ' + t.replace(/^bearer\s+/i, '').trim();
+    return 'Bearer ' + t;
+  }
+
+  function authHeaders(){
+    const token = normalizeBearerToken(getStoredToken() || $('#auth_token')?.value || '');
+    return token ? { Authorization: token } : {};
+  }
+
+  async function readErrorMessage(r){
+    try {
+      const data = await r.json();
+      return data?.message || data?.error || JSON.stringify(data);
+    } catch {
+      return await r.text();
+    }
+  }
+
   async function jget(url){
-    const r = await fetch(url); if(!r.ok) throw new Error('HTTP '+r.status); return r.json();
+    const r = await fetch(url, { headers: authHeaders() });
+    if(!r.ok) throw new Error(`HTTP ${r.status}: ${await readErrorMessage(r)}`);
+    return r.json();
   }
   async function jpost(url, data){
-    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(data||{}) });
-    if(!r.ok) throw new Error('HTTP '+r.status); return r.json();
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type':'application/json', ...authHeaders() }, body: JSON.stringify(data||{}) });
+    if(!r.ok) throw new Error(`HTTP ${r.status}: ${await readErrorMessage(r)}`);
+    return r.json();
   }
   async function jput(url, data){
-    const r = await fetch(url, { method: 'PUT', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(data||{}) });
-    if(!r.ok) throw new Error('HTTP '+r.status); return r.json();
+    const r = await fetch(url, { method: 'PUT', headers: { 'Content-Type':'application/json', ...authHeaders() }, body: JSON.stringify(data||{}) });
+    if(!r.ok) throw new Error(`HTTP ${r.status}: ${await readErrorMessage(r)}`);
+    return r.json();
   }
   async function jdel(url){
-    const r = await fetch(url, { method: 'DELETE' });
-    if(!r.ok) throw new Error('HTTP '+r.status); return r.json();
+    const r = await fetch(url, { method: 'DELETE', headers: authHeaders() });
+    if(!r.ok) throw new Error(`HTTP ${r.status}: ${await readErrorMessage(r)}`);
+    return r.json();
   }
   const formatDateTime = (value) => value ? new Date(value).toLocaleString() : '-';
   const buildCSATLink = (token) => token ? `${window.location.origin}/satisfaction.html?token=${token}` : '';
@@ -105,6 +143,50 @@
     const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '');
     if (entries.length === 0) return '';
     return '?' + entries.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`).join('&');
+  }
+
+  function splitCSV(value) {
+    if (!value) return [];
+    return String(value)
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
+  }
+
+  function initAuthControls() {
+    const tokenFromQuery = new URLSearchParams(window.location.search).get('token');
+    if (tokenFromQuery) {
+      setStoredToken(tokenFromQuery);
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('token');
+        window.history.replaceState({}, '', url);
+      } catch {}
+    }
+
+    const tokenInput = $('#auth_token');
+    if (tokenInput) tokenInput.value = getStoredToken();
+
+    const statusEl = $('#auth_status');
+    const refreshStatus = () => {
+      const ok = !!getStoredToken();
+      if (!statusEl) return;
+      statusEl.textContent = ok ? '已设置 Token' : '未设置 Token（/api 将返回 401）';
+    };
+    refreshStatus();
+
+    $('#btn_save_token')?.addEventListener('click', async () => {
+      const v = String($('#auth_token')?.value || '').trim();
+      setStoredToken(v);
+      refreshStatus();
+      await Promise.allSettled([loadDashboard(), loadTickets(), loadCustomers(), loadAgents(), loadAI(), loadAgentsForBulkControls()]);
+    });
+    $('#btn_clear_token')?.addEventListener('click', async () => {
+      setStoredToken('');
+      if ($('#auth_token')) $('#auth_token').value = '';
+      refreshStatus();
+      await Promise.allSettled([loadDashboard(), loadTickets(), loadCustomers(), loadAgents(), loadAI(), loadAgentsForBulkControls()]);
+    });
   }
 
   // 仪表板
@@ -511,6 +593,27 @@
     priority: null
   };
 
+  function getSelectedTicketIDs() {
+    return $$('.ticket_select')
+      .filter(el => el.checked)
+      .map(el => parseInt(el.dataset.id, 10))
+      .filter(n => Number.isFinite(n) && n > 0);
+  }
+
+  function syncTicketSelectAllState() {
+    const selectAll = $('#tickets_select_all');
+    if (!selectAll) return;
+    const boxes = $$('.ticket_select');
+    const checked = boxes.filter(b => b.checked).length;
+    if (boxes.length === 0) {
+      selectAll.checked = false;
+      selectAll.indeterminate = false;
+      return;
+    }
+    selectAll.checked = checked === boxes.length;
+    selectAll.indeterminate = checked > 0 && checked < boxes.length;
+  }
+
   async function loadTickets(){
     try {
       const res = await jget(`${API}/tickets`);
@@ -519,14 +622,77 @@
       tbody.innerHTML = '';
       list.forEach(t => {
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${t.id||''}</td><td>${t.title||''}</td><td>${t.status||''}</td><td>${t.priority||''}</td><td>${t.customer_id||''}</td><td><button data-id="${t.id}">详情</button></td>`;
+        tr.innerHTML = `<td><input type="checkbox" class="ticket_select" data-id="${t.id||''}" /></td><td>${t.id||''}</td><td>${t.title||''}</td><td>${t.status||''}</td><td>${t.priority||''}</td><td>${t.customer_id||''}</td><td><button data-id="${t.id}">详情</button></td>`;
         tbody.appendChild(tr);
       });
+      syncTicketSelectAllState();
 
       // 初始化工单图表
       await initializeTicketCharts(list);
     } catch(e) {
-      $('#tbl_tickets tbody').innerHTML = `<tr><td colspan="6">加载失败: ${e.message}</td></tr>`;
+      $('#tbl_tickets tbody').innerHTML = `<tr><td colspan="7">加载失败: ${e.message}</td></tr>`;
+      syncTicketSelectAllState();
+    }
+  }
+
+  async function loadAgentsForBulkControls() {
+    const sel = $('#bulk_ticket_agent');
+    if (!sel) return;
+    sel.innerHTML = `<option value="">批量指派（不修改）</option>`;
+    try {
+      const res = await jget(`${API}/agents`);
+      const agents = res.data || res || [];
+      agents.forEach(a => {
+        const userID = a.user_id ?? a.user?.id;
+        if (!userID) return;
+        const name = a.user?.name || a.user?.username || `客服${a.id ?? userID}`;
+        const opt = document.createElement('option');
+        opt.value = String(userID);
+        opt.textContent = `${name} (user_id=${userID})`;
+        sel.appendChild(opt);
+      });
+    } catch (e) {
+      const msg = $('#ticket_bulk_msg');
+      if (msg) msg.textContent = `加载客服列表失败: ${e.message}`;
+    }
+  }
+
+  async function applyTicketBulkUpdate() {
+    const msg = $('#ticket_bulk_msg');
+    if (msg) msg.textContent = '';
+    const ids = getSelectedTicketIDs();
+    if (ids.length === 0) {
+      if (msg) msg.textContent = '请先勾选要批量操作的工单';
+      return;
+    }
+
+    const status = $('#bulk_ticket_status')?.value || '';
+    const agentValue = $('#bulk_ticket_agent')?.value || '';
+    const unassign = !!$('#bulk_ticket_unassign')?.checked;
+    const addTags = splitCSV($('#bulk_ticket_add_tags')?.value || '');
+    const removeTags = splitCSV($('#bulk_ticket_remove_tags')?.value || '');
+
+    const payload = { ticket_ids: ids };
+    if (status) payload.status = status;
+    if (addTags.length) payload.add_tags = addTags;
+    if (removeTags.length) payload.remove_tags = removeTags;
+    if (unassign) payload.unassign_agent = true;
+    if (!unassign && agentValue) payload.agent_id = parseInt(agentValue, 10);
+
+    const hasMutation = !!payload.status || !!payload.agent_id || !!payload.unassign_agent || (payload.add_tags && payload.add_tags.length) || (payload.remove_tags && payload.remove_tags.length);
+    if (!hasMutation) {
+      if (msg) msg.textContent = '未选择任何批量修改项';
+      return;
+    }
+
+    try {
+      const res = await jpost(`${API}/tickets/bulk`, payload);
+      const updated = res.updated?.length ?? 0;
+      const failed = res.failed?.length ?? 0;
+      if (msg) msg.textContent = `完成：成功 ${updated}，失败 ${failed}`;
+      await loadTickets();
+    } catch (e) {
+      if (msg) msg.textContent = `批量操作失败: ${e.message}`;
     }
   }
 
@@ -1669,17 +1835,42 @@
   });
 
   // 初始化
+  initAuthControls();
   loadDashboard();
   loadTickets();
   loadCustomers();
   loadAgents();
   loadAI();
+  loadAgentsForBulkControls();
   loadMacros();
   loadAutomations();
   loadSatisfactions();
   loadSatisfactionStats();
   loadCSATSurveys();
   loadIntegrations();
+
+  // 工单批量操作
+  $('#tickets_select_all')?.addEventListener('change', (ev) => {
+    const checked = !!ev.target.checked;
+    $$('.ticket_select').forEach(el => { el.checked = checked; });
+    syncTicketSelectAllState();
+  });
+  document.addEventListener('change', (ev) => {
+    if (ev.target && ev.target.classList && ev.target.classList.contains('ticket_select')) {
+      syncTicketSelectAllState();
+    }
+  });
+  $('#bulk_ticket_unassign')?.addEventListener('change', (ev) => {
+    const sel = $('#bulk_ticket_agent');
+    if (!sel) return;
+    if (ev.target.checked) {
+      sel.value = '';
+      sel.disabled = true;
+    } else {
+      sel.disabled = false;
+    }
+  });
+  $('#btn_ticket_bulk_apply')?.addEventListener('click', applyTicketBulkUpdate);
 
   // 导航切换时加载满意度/宏数据
   // 窗口大小变化时重新调整图表大小
