@@ -80,13 +80,13 @@ func (s *AutomationService) HandleEvent(ctx context.Context, evt AutomationEvent
 	}
 
 	for _, trig := range triggers {
-		if s.matchTrigger(ctx, trig, evt, &ticket) {
+		if s.matchTrigger(ctx, trig, evt, &ticket, false) {
 			s.logger.Infof("automation: trigger %s matched event %s", trig.Name, evt.Type)
 		}
 	}
 }
 
-func (s *AutomationService) matchTrigger(ctx context.Context, trig models.AutomationTrigger, evt AutomationEvent, ticket *models.Ticket) bool {
+func (s *AutomationService) matchTrigger(ctx context.Context, trig models.AutomationTrigger, evt AutomationEvent, ticket *models.Ticket, dryRun bool) bool {
 	conds := []TriggerCondition{}
 	if trig.Conditions != "" {
 		if err := json.Unmarshal([]byte(trig.Conditions), &conds); err != nil {
@@ -109,6 +109,10 @@ func (s *AutomationService) matchTrigger(ctx context.Context, trig models.Automa
 		if !evaluateCondition(cond, attrs) {
 			return false
 		}
+	}
+
+	if dryRun {
+		return true
 	}
 
 	actions := []TriggerAction{}
@@ -219,6 +223,128 @@ func (s *AutomationService) recordRun(ctx context.Context, triggerID uint, ticke
 	if err := s.db.WithContext(ctx).Create(run).Error; err != nil {
 		s.logger.Warnf("automation: record run failed: %v", err)
 	}
+}
+
+type AutomationRunListRequest struct {
+	Page      int    `form:"page"`
+	PageSize  int    `form:"page_size"`
+	Status    string `form:"status"`
+	TriggerID uint   `form:"trigger_id"`
+	TicketID  uint   `form:"ticket_id"`
+}
+
+func (s *AutomationService) ListRuns(ctx context.Context, req *AutomationRunListRequest) ([]models.AutomationRun, int64, error) {
+	page := 1
+	pageSize := 20
+	if req != nil {
+		if req.Page > 0 {
+			page = req.Page
+		}
+		if req.PageSize > 0 {
+			pageSize = req.PageSize
+		}
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	offset := (page - 1) * pageSize
+
+	q := s.db.WithContext(ctx).Model(&models.AutomationRun{}).Preload("Trigger")
+	if req != nil {
+		if req.Status != "" {
+			q = q.Where("status = ?", req.Status)
+		}
+		if req.TriggerID != 0 {
+			q = q.Where("trigger_id = ?", req.TriggerID)
+		}
+		if req.TicketID != 0 {
+			q = q.Where("ticket_id = ?", req.TicketID)
+		}
+	}
+
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var runs []models.AutomationRun
+	if err := q.Order("id DESC").Limit(pageSize).Offset(offset).Find(&runs).Error; err != nil {
+		return nil, 0, err
+	}
+	return runs, total, nil
+}
+
+type AutomationBatchRunRequest struct {
+	Event     string `json:"event" binding:"required"`
+	TicketIDs []uint `json:"ticket_ids" binding:"required"`
+	DryRun    bool   `json:"dry_run"`
+}
+
+type AutomationBatchRunTicketResult struct {
+	TicketID          uint   `json:"ticket_id"`
+	MatchedTriggerIDs []uint `json:"matched_trigger_ids"`
+}
+
+type AutomationBatchRunResponse struct {
+	Event            string                           `json:"event"`
+	DryRun           bool                             `json:"dry_run"`
+	TicketsProcessed int                              `json:"tickets_processed"`
+	Matches          int                              `json:"matches"`
+	Results          []AutomationBatchRunTicketResult `json:"results"`
+}
+
+func (s *AutomationService) BatchRun(ctx context.Context, req *AutomationBatchRunRequest) (*AutomationBatchRunResponse, error) {
+	if s.db == nil {
+		return nil, fmt.Errorf("db not configured")
+	}
+	if req == nil {
+		return nil, fmt.Errorf("request required")
+	}
+	if !isSupportedEvent(req.Event) {
+		return nil, fmt.Errorf("unsupported event: %s", req.Event)
+	}
+	if len(req.TicketIDs) == 0 {
+		return nil, fmt.Errorf("ticket_ids required")
+	}
+	if len(req.TicketIDs) > 500 {
+		return nil, fmt.Errorf("too many ticket_ids (max 500)")
+	}
+
+	var triggers []models.AutomationTrigger
+	if err := s.db.WithContext(ctx).
+		Where("event = ? AND active = true", req.Event).
+		Order("id ASC").
+		Find(&triggers).Error; err != nil {
+		return nil, err
+	}
+
+	resp := &AutomationBatchRunResponse{
+		Event:  req.Event,
+		DryRun: req.DryRun,
+	}
+
+	for _, ticketID := range req.TicketIDs {
+		var ticket models.Ticket
+		if err := s.db.WithContext(ctx).First(&ticket, ticketID).Error; err != nil {
+			continue
+		}
+		evt := AutomationEvent{Type: req.Event, TicketID: ticket.ID}
+		var matched []uint
+		for _, trig := range triggers {
+			if s.matchTrigger(ctx, trig, evt, &ticket, req.DryRun) {
+				matched = append(matched, trig.ID)
+			}
+		}
+		if len(matched) > 0 {
+			resp.Matches += len(matched)
+		}
+		resp.Results = append(resp.Results, AutomationBatchRunTicketResult{
+			TicketID:          ticket.ID,
+			MatchedTriggerIDs: matched,
+		})
+		resp.TicketsProcessed++
+	}
+	return resp, nil
 }
 
 // ListTriggers 返回所有触发器

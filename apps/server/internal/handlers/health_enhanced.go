@@ -47,9 +47,9 @@ type ServiceInfo struct {
 
 // SystemInfo 系统信息
 type SystemInfo struct {
-	Uptime  time.Duration `json:"uptime"`
-	Version string        `json:"version"`
-	GoVersion string      `json:"go_version"`
+	Uptime    time.Duration `json:"uptime"`
+	Version   string        `json:"version"`
+	GoVersion string        `json:"go_version"`
 }
 
 var startTime = time.Now()
@@ -186,15 +186,15 @@ func (h *EnhancedHealthHandler) checkDatabase(ctx context.Context, response *Hea
 	// 简单的连接测试（当前模拟实现）
 	// 实际实现应该执行 SELECT 1 查询或类似的健康检查
 	/*
-	if db != nil {
-		if err := db.PingContext(ctx); err != nil {
+		if db != nil {
+			if err := db.PingContext(ctx); err != nil {
+				dbHealthy = false
+				dbError = err.Error()
+			}
+		} else {
 			dbHealthy = false
-			dbError = err.Error()
+			dbError = "database connection not initialized"
 		}
-	} else {
-		dbHealthy = false
-		dbError = "database connection not initialized"
-	}
 	*/
 
 	serviceInfo := ServiceInfo{
@@ -228,15 +228,15 @@ func (h *EnhancedHealthHandler) checkRedis(ctx context.Context, response *Health
 	// 简单的连接测试（当前模拟实现）
 	// 实际实现应该执行 PING 命令或类似的健康检查
 	/*
-	if redisClient != nil {
-		if err := redisClient.Ping(ctx).Err(); err != nil {
+		if redisClient != nil {
+			if err := redisClient.Ping(ctx).Err(); err != nil {
+				redisHealthy = false
+				redisError = err.Error()
+			}
+		} else {
 			redisHealthy = false
-			redisError = err.Error()
+			redisError = "redis connection not initialized"
 		}
-	} else {
-		redisHealthy = false
-		redisError = "redis connection not initialized"
-	}
 	*/
 
 	serviceInfo := ServiceInfo{

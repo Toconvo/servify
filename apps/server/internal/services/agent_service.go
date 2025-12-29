@@ -15,8 +15,8 @@ import (
 
 // AgentService 人工客服服务
 type AgentService struct {
-	db          *gorm.DB
-	logger      *logrus.Logger
+	db           *gorm.DB
+	logger       *logrus.Logger
 	onlineAgents sync.Map // map[uint]*AgentInfo - 在线客服列表
 	agentQueues  sync.Map // map[uint]chan *models.Session - 客服会话队列
 }
@@ -40,35 +40,35 @@ func NewAgentService(db *gorm.DB, logger *logrus.Logger) *AgentService {
 
 // AgentInfo 在线客服信息
 type AgentInfo struct {
-	UserID          uint                    `json:"user_id"`
-	Username        string                  `json:"username"`
-	Name            string                  `json:"name"`
-	Department      string                  `json:"department"`
-	Skills          []string                `json:"skills"`
-	Status          string                  `json:"status"` // online, busy, away
-	MaxConcurrent   int                     `json:"max_concurrent"`
-	CurrentLoad     int                     `json:"current_load"`
-	Rating          float64                 `json:"rating"`
-	AvgResponseTime int                     `json:"avg_response_time"`
-	LastActivity    time.Time               `json:"last_activity"`
-	ConnectedAt     time.Time               `json:"connected_at"`
+	UserID          uint                       `json:"user_id"`
+	Username        string                     `json:"username"`
+	Name            string                     `json:"name"`
+	Department      string                     `json:"department"`
+	Skills          []string                   `json:"skills"`
+	Status          string                     `json:"status"` // online, busy, away
+	MaxConcurrent   int                        `json:"max_concurrent"`
+	CurrentLoad     int                        `json:"current_load"`
+	Rating          float64                    `json:"rating"`
+	AvgResponseTime int                        `json:"avg_response_time"`
+	LastActivity    time.Time                  `json:"last_activity"`
+	ConnectedAt     time.Time                  `json:"connected_at"`
 	Sessions        map[string]*models.Session `json:"-"` // 当前处理的会话
 }
 
 // AgentCreateRequest 创建客服请求
 type AgentCreateRequest struct {
-	UserID         uint   `json:"user_id" binding:"required"`
-	Department     string `json:"department"`
-	Skills         string `json:"skills"`
-	MaxConcurrent  int    `json:"max_concurrent"`
+	UserID        uint   `json:"user_id" binding:"required"`
+	Department    string `json:"department"`
+	Skills        string `json:"skills"`
+	MaxConcurrent int    `json:"max_concurrent"`
 }
 
 // AgentUpdateRequest 更新客服请求
 type AgentUpdateRequest struct {
-	Department    *string  `json:"department"`
-	Skills        *string  `json:"skills"`
-	Status        *string  `json:"status"`
-	MaxConcurrent *int     `json:"max_concurrent"`
+	Department    *string `json:"department"`
+	Skills        *string `json:"skills"`
+	Status        *string `json:"status"`
+	MaxConcurrent *int    `json:"max_concurrent"`
 }
 
 // CreateAgent 创建客服
@@ -128,6 +128,21 @@ func (s *AgentService) GetAgentByUserID(ctx context.Context, userID uint) (*mode
 	}
 
 	return &agent, nil
+}
+
+// ListAgents 获取所有客服（用于管理后台/批量指派下拉）
+func (s *AgentService) ListAgents(ctx context.Context, limit int) ([]models.Agent, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	var agents []models.Agent
+	if err := s.db.Preload("User").
+		Order("updated_at DESC").
+		Limit(limit).
+		Find(&agents).Error; err != nil {
+		return nil, fmt.Errorf("failed to list agents: %w", err)
+	}
+	return agents, nil
 }
 
 // AgentGoOnline 客服上线
@@ -252,7 +267,9 @@ func (s *AgentService) AssignSessionToAgent(ctx context.Context, sessionID strin
 		Where("id = ?", sessionID).
 		Updates(map[string]interface{}{
 			"agent_id": agentID,
-			"status":   "assigned",
+			// 会话生命周期：active/ended；是否已分配通过 agent_id 判断
+			"status":   "active",
+			"ended_at": nil,
 		}).Error; err != nil {
 		return fmt.Errorf("failed to assign session: %w", err)
 	}
@@ -481,6 +498,29 @@ func (s *AgentService) cleanupInactiveAgents() {
 func (s *AgentService) updateAgentMetrics() {
 	// 这里可以实现更复杂的指标计算逻辑
 	// 例如：计算平均响应时间、处理工单数等
+}
+
+// ApplySessionTransfer 在内存中应用一次会话转接（不写 DB）
+func (s *AgentService) ApplySessionTransfer(sessionID string, fromAgentID *uint, toAgentID uint) {
+	now := time.Now()
+	if fromAgentID != nil {
+		if v, ok := s.onlineAgents.Load(*fromAgentID); ok {
+			info := v.(*AgentInfo)
+			if info.CurrentLoad > 0 {
+				info.CurrentLoad--
+			}
+			delete(info.Sessions, sessionID)
+			info.LastActivity = now
+			s.onlineAgents.Store(info.UserID, info)
+		}
+	}
+	if v, ok := s.onlineAgents.Load(toAgentID); ok {
+		info := v.(*AgentInfo)
+		info.CurrentLoad++
+		info.Sessions[sessionID] = &models.Session{ID: sessionID, AgentID: &toAgentID, Status: "active"}
+		info.LastActivity = now
+		s.onlineAgents.Store(info.UserID, info)
+	}
 }
 
 // AgentStats 客服统计信息

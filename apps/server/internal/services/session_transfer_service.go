@@ -60,8 +60,23 @@ func (s *SessionTransferService) TransferToHuman(ctx context.Context, req *Trans
 	}
 
 	// 检查会话状态
-	if session.Status == "transferred" || session.AgentID != nil {
-		return nil, fmt.Errorf("session already transferred or assigned")
+	if session.Status == "ended" {
+		return nil, fmt.Errorf("session already ended")
+	}
+	if session.AgentID != nil {
+		return nil, fmt.Errorf("session already assigned")
+	}
+
+	// 若已在等待队列中，直接返回（避免重复入队）
+	var existing models.WaitingRecord
+	if err := s.db.Where("session_id = ? AND status = ?", session.ID, "waiting").First(&existing).Error; err == nil {
+		return &TransferResult{
+			Success:   true,
+			SessionID: session.ID,
+			IsWaiting: true,
+			QueuedAt:  &existing.QueuedAt,
+			Summary:   "会话已在等待队列中",
+		}, nil
 	}
 
 	// 查找可用的客服
@@ -100,83 +115,135 @@ func (s *SessionTransferService) TransferToAgent(ctx context.Context, sessionID 
 
 // executeTransfer 执行转接
 func (s *SessionTransferService) executeTransfer(ctx context.Context, session *models.Session, targetAgentID uint, reason, notes string) (*TransferResult, error) {
-	// 开始事务
-	tx := s.db.Begin()
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
-
-	// 如果会话已有客服，先释放原客服
-	if session.AgentID != nil {
-		if err := s.agentService.ReleaseSessionFromAgent(ctx, session.ID, *session.AgentID); err != nil {
-			tx.Rollback()
-			return nil, fmt.Errorf("failed to release from current agent: %w", err)
-		}
+	if session.Status == "ended" {
+		return nil, fmt.Errorf("session already ended")
+	}
+	if session.AgentID != nil && *session.AgentID == targetAgentID {
+		return &TransferResult{
+			Success:    true,
+			SessionID:  session.ID,
+			NewAgentID: targetAgentID,
+			Summary:    "会话已指派给目标客服",
+		}, nil
 	}
 
-	// 分配给新客服
-	if err := s.agentService.AssignSessionToAgent(ctx, session.ID, targetAgentID); err != nil {
-		tx.Rollback()
-		return nil, fmt.Errorf("failed to assign to target agent: %w", err)
-	}
+	fromAgentID := session.AgentID
+	transferAt := time.Now()
 
-	// 更新会话状态
-	updates := map[string]interface{}{
-		"agent_id": targetAgentID,
-		"status":   "transferred",
-	}
-
-	if err := tx.Model(&models.Session{}).Where("id = ?", session.ID).Updates(updates).Error; err != nil {
-		tx.Rollback()
-		return nil, fmt.Errorf("failed to update session: %w", err)
-	}
-
-	// 创建系统消息
-	transferMessage := &models.Message{
-		SessionID: session.ID,
-		UserID:    targetAgentID,
-		Content:   s.buildTransferMessage(reason, notes),
-		Type:      "system",
-		Sender:    "system",
-	}
-
-	if err := tx.Create(transferMessage).Error; err != nil {
-		tx.Rollback()
-		return nil, fmt.Errorf("failed to create transfer message: %w", err)
-	}
-
-	// 生成会话摘要
+	// 生成会话摘要（在事务外，避免长事务）
 	summary, err := s.generateSessionSummary(session)
 	if err != nil {
 		s.logger.Warnf("Failed to generate session summary: %v", err)
 		summary = "无法生成会话摘要"
 	}
 
+	transferMessageContent := s.buildTransferMessage(reason, notes)
+
 	// 创建转接记录
-	transferRecord := &TransferRecord{
-		SessionID:       session.ID,
-		FromAgentID:     session.AgentID,
-		ToAgentID:       &targetAgentID,
-		Reason:          reason,
-		Notes:           notes,
-		SessionSummary:  summary,
-		TransferredAt:   time.Now(),
+	transferRecord := &models.TransferRecord{
+		SessionID:      session.ID,
+		FromAgentID:    fromAgentID,
+		ToAgentID:      &targetAgentID,
+		Reason:         reason,
+		Notes:          notes,
+		SessionSummary: summary,
+		TransferredAt:  transferAt,
 	}
 
-	if err := tx.Create(transferRecord).Error; err != nil {
-		tx.Rollback()
-		return nil, fmt.Errorf("failed to create transfer record: %w", err)
+	// 原子化：会话指派 + 工时负载 + 记录/消息
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		// 更新会话：active/ended；是否分配由 agent_id 判断
+		if err := tx.Model(&models.Session{}).
+			Where("id = ?", session.ID).
+			Updates(map[string]interface{}{
+				"agent_id": targetAgentID,
+				"status":   "active",
+				"ended_at": nil,
+			}).Error; err != nil {
+			return fmt.Errorf("update session: %w", err)
+		}
+
+		// 若会话关联了工单，则同步工单的指派（与会话转接保持一致）
+		if session.TicketID != nil && *session.TicketID != 0 {
+			var ticket models.Ticket
+			if err := tx.Select("id", "agent_id", "status").First(&ticket, "id = ?", *session.TicketID).Error; err != nil {
+				if err != gorm.ErrRecordNotFound {
+					return fmt.Errorf("load ticket: %w", err)
+				}
+			} else {
+				updates := map[string]interface{}{
+					"agent_id": targetAgentID,
+				}
+				fromStatus := ticket.Status
+				toStatus := fromStatus
+				if fromStatus == "open" || fromStatus == "" {
+					toStatus = "assigned"
+					updates["status"] = toStatus
+				}
+				if err := tx.Model(&models.Ticket{}).Where("id = ?", ticket.ID).Updates(updates).Error; err != nil {
+					return fmt.Errorf("update ticket: %w", err)
+				}
+
+				// Best-effort 记录状态变更（不影响主流程）
+				_ = tx.Create(&models.TicketStatus{
+					TicketID:   ticket.ID,
+					UserID:     targetAgentID,
+					FromStatus: fromStatus,
+					ToStatus:   toStatus,
+					Reason:     fmt.Sprintf("会话转接同步指派至客服 %d", targetAgentID),
+					CreatedAt:  transferAt,
+				}).Error
+			}
+		}
+
+		// 负载：转移需要先减后加（最佳努力不低于 0）
+		if fromAgentID != nil && *fromAgentID != targetAgentID {
+			if err := tx.Exec(`UPDATE agents SET current_load = CASE WHEN current_load > 0 THEN current_load - 1 ELSE 0 END WHERE user_id = ?`, *fromAgentID).Error; err != nil {
+				return fmt.Errorf("decrement from agent load: %w", err)
+			}
+		}
+		if err := tx.Exec(`UPDATE agents SET current_load = current_load + 1 WHERE user_id = ?`, targetAgentID).Error; err != nil {
+			return fmt.Errorf("increment target agent load: %w", err)
+		}
+
+		// 创建系统消息（通知用户）
+		transferMessage := &models.Message{
+			SessionID: session.ID,
+			UserID:    targetAgentID,
+			Content:   transferMessageContent,
+			Type:      "system",
+			Sender:    "system",
+			CreatedAt: transferAt,
+		}
+		if err := tx.Create(transferMessage).Error; err != nil {
+			return fmt.Errorf("create transfer message: %w", err)
+		}
+
+		if err := tx.Create(transferRecord).Error; err != nil {
+			return fmt.Errorf("create transfer record: %w", err)
+		}
+
+		// 若会话此前在等待队列中，则标记为已分配
+		_ = tx.Model(&models.WaitingRecord{}).
+			Where("session_id = ? AND status = ?", session.ID, "waiting").
+			Updates(map[string]interface{}{
+				"status":      "transferred",
+				"assigned_at": transferAt,
+				"assigned_to": targetAgentID,
+			}).Error
+
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
-	// 提交事务
-	if err := tx.Commit().Error; err != nil {
-		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	// 更新内存状态（在线客服负载/会话映射），避免与 DB 状态长期漂移
+	if s.agentService != nil {
+		s.agentService.ApplySessionTransfer(session.ID, fromAgentID, targetAgentID)
 	}
 
 	// 发送实时通知
-	s.notifyTransfer(session.ID, targetAgentID, transferMessage.Content)
+	s.notifyTransfer(session.ID, targetAgentID, transferMessageContent)
 
 	s.logger.Infof("Successfully transferred session %s to agent %d", session.ID, targetAgentID)
 
@@ -191,22 +258,37 @@ func (s *SessionTransferService) executeTransfer(ctx context.Context, session *m
 
 // addToWaitingQueue 添加到等待队列
 func (s *SessionTransferService) addToWaitingQueue(ctx context.Context, session *models.Session, req *TransferRequest) (*TransferResult, error) {
-	// 更新会话状态为等待中
+	// 若已在等待队列中，直接返回（避免重复入队）
+	var existing models.WaitingRecord
+	if err := s.db.Where("session_id = ? AND status = ?", session.ID, "waiting").First(&existing).Error; err == nil {
+		return &TransferResult{
+			Success:   true,
+			SessionID: session.ID,
+			IsWaiting: true,
+			QueuedAt:  &existing.QueuedAt,
+			Summary:   "会话已在等待队列中",
+		}, nil
+	}
+
+	// 会话保持 active，等待队列由 WaitingRecord 表达
 	if err := s.db.Model(&models.Session{}).
 		Where("id = ?", session.ID).
 		Updates(map[string]interface{}{
-			"status": "waiting_for_agent",
+			"status":   "active",
+			"agent_id": nil,
+			"ended_at": nil,
 		}).Error; err != nil {
-		return nil, fmt.Errorf("failed to update session status: %w", err)
+		return nil, fmt.Errorf("failed to ensure session active: %w", err)
 	}
 
 	// 创建等待记录
-	waitingRecord := &WaitingRecord{
+	waitingRecord := &models.WaitingRecord{
 		SessionID:    session.ID,
 		Reason:       req.Reason,
 		TargetSkills: strings.Join(req.TargetSkills, ","),
 		Priority:     req.Priority,
 		Notes:        req.Notes,
+		Status:       "waiting",
 		QueuedAt:     time.Now(),
 	}
 
@@ -231,18 +313,18 @@ func (s *SessionTransferService) addToWaitingQueue(ctx context.Context, session 
 	s.logger.Infof("Added session %s to waiting queue", session.ID)
 
 	return &TransferResult{
-		Success:     true,
-		SessionID:   session.ID,
-		IsWaiting:   true,
-		QueuedAt:    &waitingRecord.QueuedAt,
-		Summary:     "会话已加入等待队列",
+		Success:   true,
+		SessionID: session.ID,
+		IsWaiting: true,
+		QueuedAt:  &waitingRecord.QueuedAt,
+		Summary:   "会话已加入等待队列",
 	}, nil
 }
 
 // ProcessWaitingQueue 处理等待队列
 func (s *SessionTransferService) ProcessWaitingQueue(ctx context.Context) error {
 	// 获取等待中的会话
-	var waitingRecords []WaitingRecord
+	var waitingRecords []models.WaitingRecord
 	if err := s.db.Where("status = ?", "waiting").
 		Order("priority DESC, queued_at ASC").
 		Limit(10).
@@ -276,12 +358,12 @@ func (s *SessionTransferService) ProcessWaitingQueue(ctx context.Context) error 
 		}
 
 		// 更新等待记录状态
-		s.db.Model(&WaitingRecord{}).
+		s.db.Model(&models.WaitingRecord{}).
 			Where("id = ?", record.ID).
 			Updates(map[string]interface{}{
-				"status":       "transferred",
-				"assigned_at":  time.Now(),
-				"assigned_to":  agent.UserID,
+				"status":      "transferred",
+				"assigned_at": time.Now(),
+				"assigned_to": agent.UserID,
 			})
 
 		s.logger.Infof("Successfully transferred waiting session %s to agent %d",
@@ -303,7 +385,11 @@ func (s *SessionTransferService) generateSessionSummary(session *models.Session)
 
 	// 如果消息太少，返回简单摘要
 	if len(messages) < 3 {
-		return fmt.Sprintf("用户%s的简短会话，共%d条消息", session.User.Username, len(messages)), nil
+		userLabel := session.User.Username
+		if userLabel == "" {
+			userLabel = fmt.Sprintf("ID=%d", session.UserID)
+		}
+		return fmt.Sprintf("用户%s的简短会话，共%d条消息", userLabel, len(messages)), nil
 	}
 
 	// 使用 AI 服务生成摘要
@@ -356,8 +442,8 @@ func (s *SessionTransferService) notifyWaiting(sessionID string, message string)
 }
 
 // GetTransferHistory 获取转接历史
-func (s *SessionTransferService) GetTransferHistory(ctx context.Context, sessionID string) ([]TransferRecord, error) {
-	var records []TransferRecord
+func (s *SessionTransferService) GetTransferHistory(ctx context.Context, sessionID string) ([]models.TransferRecord, error) {
+	var records []models.TransferRecord
 	err := s.db.Where("session_id = ?", sessionID).
 		Order("transferred_at DESC").
 		Find(&records).Error
@@ -367,6 +453,65 @@ func (s *SessionTransferService) GetTransferHistory(ctx context.Context, session
 	}
 
 	return records, nil
+}
+
+// ListWaitingRecords 列出等待队列记录（默认 status=waiting）
+func (s *SessionTransferService) ListWaitingRecords(ctx context.Context, status string, limit int) ([]models.WaitingRecord, error) {
+	if status == "" {
+		status = "waiting"
+	}
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	var records []models.WaitingRecord
+	if err := s.db.Where("status = ?", status).
+		Order("priority DESC, queued_at ASC").
+		Limit(limit).
+		Find(&records).Error; err != nil {
+		return nil, fmt.Errorf("failed to list waiting records: %w", err)
+	}
+	return records, nil
+}
+
+// CancelWaitingRecord 取消等待队列中的会话（幂等）
+func (s *SessionTransferService) CancelWaitingRecord(ctx context.Context, sessionID string, operatorID uint, reason string) error {
+	if sessionID == "" {
+		return fmt.Errorf("session_id is required")
+	}
+	if reason == "" {
+		reason = "cancelled"
+	}
+
+	now := time.Now()
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		var wr models.WaitingRecord
+		if err := tx.Where("session_id = ? AND status = ?", sessionID, "waiting").First(&wr).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return nil
+			}
+			return fmt.Errorf("load waiting record: %w", err)
+		}
+
+		if err := tx.Model(&models.WaitingRecord{}).
+			Where("id = ?", wr.ID).
+			Updates(map[string]interface{}{
+				"status": "cancelled",
+			}).Error; err != nil {
+			return fmt.Errorf("update waiting record: %w", err)
+		}
+
+		// 记录系统消息（可选，不影响主流程）
+		msg := &models.Message{
+			SessionID: sessionID,
+			UserID:    operatorID,
+			Content:   fmt.Sprintf("已取消人工客服等待队列（原因：%s）", reason),
+			Type:      "system",
+			Sender:    "system",
+			CreatedAt: now,
+		}
+		_ = tx.Create(msg).Error
+		return nil
+	})
 }
 
 // AutoTransferCheck 自动转接检查
@@ -390,33 +535,6 @@ func (s *SessionTransferService) AutoTransferCheck(ctx context.Context, sessionI
 
 	// 使用 AI 服务判断是否需要转人工
 	return s.aiService.ShouldTransferToHuman(query, messages)
-}
-
-// 数据模型
-type TransferRecord struct {
-	ID             uint       `gorm:"primaryKey" json:"id"`
-	SessionID      string     `gorm:"index" json:"session_id"`
-	FromAgentID    *uint      `json:"from_agent_id"`
-	ToAgentID      *uint      `json:"to_agent_id"`
-	Reason         string     `json:"reason"`
-	Notes          string     `json:"notes"`
-	SessionSummary string     `gorm:"type:text" json:"session_summary"`
-	TransferredAt  time.Time  `json:"transferred_at"`
-	CreatedAt      time.Time  `json:"created_at"`
-}
-
-type WaitingRecord struct {
-	ID           uint       `gorm:"primaryKey" json:"id"`
-	SessionID    string     `gorm:"index" json:"session_id"`
-	Reason       string     `json:"reason"`
-	TargetSkills string     `json:"target_skills"`
-	Priority     string     `json:"priority"`
-	Notes        string     `json:"notes"`
-	Status       string     `gorm:"default:'waiting'" json:"status"` // waiting, transferred, cancelled
-	QueuedAt     time.Time  `json:"queued_at"`
-	AssignedAt   *time.Time `json:"assigned_at"`
-	AssignedTo   *uint      `json:"assigned_to"`
-	CreatedAt    time.Time  `json:"created_at"`
 }
 
 type TransferResult struct {

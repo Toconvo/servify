@@ -83,12 +83,42 @@ type Ticket struct {
 	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
 
 	// 关联关系
-	Customer      User            `gorm:"foreignKey:CustomerID" json:"customer,omitempty"`
-	Agent         *User           `gorm:"foreignKey:AgentID" json:"agent,omitempty"`
-	Session       *Session        `gorm:"foreignKey:SessionID" json:"session,omitempty"`
-	Comments      []TicketComment `gorm:"foreignKey:TicketID" json:"comments,omitempty"`
-	Attachments   []TicketFile    `gorm:"foreignKey:TicketID" json:"attachments,omitempty"`
-	StatusHistory []TicketStatus  `gorm:"foreignKey:TicketID" json:"status_history,omitempty"`
+	Customer          User                     `gorm:"foreignKey:CustomerID" json:"customer,omitempty"`
+	Agent             *User                    `gorm:"foreignKey:AgentID" json:"agent,omitempty"`
+	Session           *Session                 `gorm:"foreignKey:SessionID" json:"session,omitempty"`
+	Comments          []TicketComment          `gorm:"foreignKey:TicketID" json:"comments,omitempty"`
+	Attachments       []TicketFile             `gorm:"foreignKey:TicketID" json:"attachments,omitempty"`
+	StatusHistory     []TicketStatus           `gorm:"foreignKey:TicketID" json:"status_history,omitempty"`
+	CustomFieldValues []TicketCustomFieldValue `gorm:"foreignKey:TicketID" json:"custom_field_values,omitempty"`
+}
+
+// CustomField 自定义字段配置（用于动态表单 / 查询 / 导出）
+type CustomField struct {
+	ID             uint           `gorm:"primaryKey" json:"id"`
+	Resource       string         `gorm:"default:'ticket';index" json:"resource"` // ticket
+	Key            string         `gorm:"unique;not null" json:"key"`             // stable identifier (slug)
+	Name           string         `gorm:"not null" json:"name"`
+	Type           string         `gorm:"not null" json:"type"` // string, number, boolean, date, select, multiselect
+	Required       bool           `gorm:"default:false" json:"required"`
+	Active         bool           `gorm:"default:true" json:"active"`
+	OptionsJSON    string         `gorm:"type:text" json:"options_json,omitempty"`    // JSON array (for select/multiselect)
+	ValidationJSON string         `gorm:"type:text" json:"validation_json,omitempty"` // JSON object (min/max/regex/etc)
+	ShowWhenJSON   string         `gorm:"type:text" json:"show_when_json,omitempty"`  // JSON condition expression
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+// TicketCustomFieldValue 工单自定义字段值
+type TicketCustomFieldValue struct {
+	ID            uint      `gorm:"primaryKey" json:"id"`
+	TicketID      uint      `gorm:"index;uniqueIndex:uniq_ticket_field" json:"ticket_id"`
+	CustomFieldID uint      `gorm:"index;uniqueIndex:uniq_ticket_field" json:"custom_field_id"`
+	Value         string    `gorm:"type:text" json:"value"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+
+	CustomField CustomField `gorm:"foreignKey:CustomFieldID" json:"custom_field,omitempty"`
 }
 
 // 工单评论
@@ -164,6 +194,34 @@ type Message struct {
 
 	Session Session `gorm:"foreignKey:SessionID" json:"session,omitempty"`
 	User    User    `gorm:"foreignKey:UserID" json:"user,omitempty"`
+}
+
+// 会话转接记录
+type TransferRecord struct {
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	SessionID      string    `gorm:"index" json:"session_id"`
+	FromAgentID    *uint     `gorm:"index" json:"from_agent_id,omitempty"`
+	ToAgentID      *uint     `gorm:"index" json:"to_agent_id,omitempty"`
+	Reason         string    `json:"reason"`
+	Notes          string    `json:"notes"`
+	SessionSummary string    `gorm:"type:text" json:"session_summary"`
+	TransferredAt  time.Time `json:"transferred_at"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+// 会话等待队列记录
+type WaitingRecord struct {
+	ID           uint       `gorm:"primaryKey" json:"id"`
+	SessionID    string     `gorm:"index" json:"session_id"`
+	Reason       string     `json:"reason"`
+	TargetSkills string     `json:"target_skills"`
+	Priority     string     `json:"priority"`
+	Notes        string     `json:"notes"`
+	Status       string     `gorm:"default:'waiting'" json:"status"` // waiting, transferred, cancelled
+	QueuedAt     time.Time  `json:"queued_at"`
+	AssignedAt   *time.Time `json:"assigned_at,omitempty"`
+	AssignedTo   *uint      `gorm:"index" json:"assigned_to,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
 }
 
 // 知识库文档

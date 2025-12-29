@@ -5,6 +5,10 @@
   <title>满意度评价 - Servify</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
+    :root {
+      --brand-primary: #4299e1;
+      --brand-secondary: #764ba2;
+    }
     * {
       margin: 0;
       padding: 0;
@@ -13,7 +17,7 @@
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-secondary) 100%);
       min-height: 100vh;
       display: flex;
       align-items: center;
@@ -35,32 +39,6 @@
       from {
         opacity: 0;
         transform: translateY(30px);
-      }
-      async loadSurveyPreview() {
-        try {
-          const preview = await this.publicApi.request(`/csat/${this.surveyToken}`);
-          this.ticketId = preview.ticket_id;
-          document.getElementById('ticket-title').textContent = preview.ticket_title || '-';
-          document.getElementById('ticket-id').textContent = preview.ticket_id || '-';
-          document.getElementById('agent-name').textContent = preview.agent_name || '系统处理';
-          document.getElementById('resolved-time').textContent = preview.resolved_at
-            ? new Date(preview.resolved_at).toLocaleString('zh-CN')
-            : '-';
-
-          if (preview.status === 'completed') {
-            this.showSuccess('您已完成此次调查，感谢参与！');
-            throw new Error('Survey completed');
-          }
-          if (preview.status === 'expired') {
-            this.showError('抱歉，本次调查已过期。');
-            throw new Error('Survey expired');
-          }
-        } catch (error) {
-          if (error.message !== 'Survey completed' && error.message !== 'Survey expired') {
-            this.showError(`无法加载调查信息：${error.message}`);
-          }
-          throw error;
-        }
       }
       to {
         opacity: 1;
@@ -89,7 +67,7 @@
       border-radius: 12px;
       padding: 20px;
       margin-bottom: 30px;
-      border-left: 4px solid #4299e1;
+      border-left: 4px solid var(--brand-primary);
     }
 
     .ticket-info h3 {
@@ -160,8 +138,8 @@
 
     .form-select:focus {
       outline: none;
-      border-color: #4299e1;
-      box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
+      border-color: var(--brand-primary);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 20%, transparent);
     }
 
     .form-textarea {
@@ -178,8 +156,8 @@
 
     .form-textarea:focus {
       outline: none;
-      border-color: #4299e1;
-      box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
+      border-color: var(--brand-primary);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 20%, transparent);
     }
 
     .form-textarea::placeholder {
@@ -188,7 +166,7 @@
 
     .submit-button {
       width: 100%;
-      background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
+      background: linear-gradient(135deg, var(--brand-primary) 0%, color-mix(in srgb, var(--brand-primary) 70%, #000) 100%);
       color: white;
       border: none;
       padding: 16px;
@@ -201,7 +179,7 @@
 
     .submit-button:hover {
       transform: translateY(-2px);
-      box-shadow: 0 10px 25px rgba(66, 153, 225, 0.3);
+      box-shadow: 0 10px 25px color-mix(in srgb, var(--brand-primary) 35%, transparent);
     }
 
     .submit-button:active {
@@ -260,27 +238,27 @@
 <body>
   <div class="satisfaction-form">
     <div class="form-header">
-      <h1>🌟 客户满意度评价</h1>
-      <p>您的反馈对我们很重要，请为本次服务体验打分</p>
+      <h1 id="page-h1">🌟 客户满意度评价</h1>
+      <p id="page-subtitle">您的反馈对我们很重要，请为本次服务体验打分</p>
     </div>
 
     <div id="loading" class="loading">
-      正在加载工单信息...
+      <span id="loading-text">正在加载工单信息...</span>
     </div>
 
     <div id="error-message" class="error-message" style="display: none;"></div>
 
     <form id="satisfaction-form" style="display: none;">
       <div class="ticket-info">
-        <h3>工单信息</h3>
-        <p><strong>工单标题:</strong> <span id="ticket-title">-</span></p>
-        <p><strong>工单编号:</strong> #<span id="ticket-id">-</span></p>
-        <p><strong>处理客服:</strong> <span id="agent-name">-</span></p>
-        <p><strong>解决时间:</strong> <span id="resolved-time">-</span></p>
+        <h3 id="ticket-info-title">工单信息</h3>
+        <p><strong id="lbl-ticket-title">工单标题:</strong> <span id="ticket-title">-</span></p>
+        <p><strong id="lbl-ticket-id">工单编号:</strong> #<span id="ticket-id">-</span></p>
+        <p><strong id="lbl-agent-name">处理客服:</strong> <span id="agent-name">-</span></p>
+        <p><strong id="lbl-resolved-time">解决时间:</strong> <span id="resolved-time">-</span></p>
       </div>
 
       <div class="form-group">
-        <label for="rating">整体满意度 <span style="color: #e53e3e;">*</span></label>
+        <label for="rating"><span id="lbl-rating">整体满意度</span> <span style="color: #e53e3e;">*</span></label>
         <div class="rating-container">
           <div class="star-rating" id="star-rating">
             <span class="star" data-rating="1">★</span>
@@ -294,7 +272,7 @@
       </div>
 
       <div class="form-group">
-        <label for="category">评价类型</label>
+        <label for="category" id="lbl-category">评价类型</label>
         <select id="category" class="form-select">
           <option value="overall">整体满意度</option>
           <option value="service_quality">服务质量</option>
@@ -304,7 +282,7 @@
       </div>
 
       <div class="form-group">
-        <label for="comment">详细反馈</label>
+        <label for="comment" id="lbl-comment">详细反馈</label>
         <textarea
           id="comment"
           class="form-textarea"
@@ -318,8 +296,8 @@
     </form>
 
     <div id="success-message" class="success-message" style="display: none;">
-      <h3>🎉 感谢您的反馈！</h3>
-      <p>您的评价已成功提交，我们将认真对待您的每一条建议。</p>
+      <h3 id="success-title">🎉 感谢您的反馈！</h3>
+      <p id="success-text">您的评价已成功提交，我们将认真对待您的每一条建议。</p>
     </div>
   </div>
 
@@ -337,14 +315,7 @@
         this.stars = container.querySelectorAll('.star');
         this.ratingText = document.getElementById('rating-text');
         this.currentRating = 0;
-        this.ratingTexts = {
-          0: '请选择评分',
-          1: '很不满意',
-          2: '不满意',
-          3: '一般',
-          4: '满意',
-          5: '非常满意'
-        };
+        this.ratingTexts = {};
 
         this.init();
       }
@@ -383,6 +354,11 @@
 
       getRating() {
         return this.currentRating;
+      }
+
+      setRatingTexts(texts) {
+        this.ratingTexts = texts || {};
+        this.ratingText.textContent = this.ratingTexts[this.currentRating] || this.ratingTexts[0] || '';
       }
     }
 
@@ -442,6 +418,7 @@
         this.ticketId = getUrlParameter('ticket_id');
         this.customerId = getUrlParameter('customer_id');
         this.surveyToken = getUrlParameter('token');
+        this.lang = getUrlParameter('lang');
 
         this.loadingEl = document.getElementById('loading');
         this.errorMessageEl = document.getElementById('error-message');
@@ -451,8 +428,175 @@
         this.init();
       }
 
-      async init() {
+      normalizeLocale(loc) {
+        if (!loc) return '';
+        loc = String(loc).trim();
+        if (loc === 'zh' || loc === 'zh-CN') return 'zh-CN';
+        if (loc === 'en' || loc === 'en-US') return 'en-US';
+        return loc;
+      }
+
+      pickLocale(portal) {
+        const urlLoc = this.normalizeLocale(this.lang);
+        if (urlLoc && this.I18N[urlLoc]) return urlLoc;
+        const portalLoc = this.normalizeLocale(portal?.default_locale);
+        if (portalLoc && this.I18N[portalLoc]) return portalLoc;
+        const navLoc = this.normalizeLocale(navigator.language || '');
+        if (navLoc && this.I18N[navLoc]) return navLoc;
+        return 'zh-CN';
+      }
+
+      async loadPortalConfig() {
+        const res = await fetch('/public/portal/config', { headers: { Accept: 'application/json' } }).catch(() => null);
+        if (!res || !res.ok) return null;
+        return await res.json().catch(() => null);
+      }
+
+      applyBranding(portal) {
+        if (!portal) return;
+        const root = document.documentElement;
+        if (portal.primary_color) root.style.setProperty('--brand-primary', portal.primary_color);
+        if (portal.secondary_color) root.style.setProperty('--brand-secondary', portal.secondary_color);
+      }
+
+      applyI18n(portal) {
+        const locale = this.pickLocale(portal);
+        this.locale = locale;
+        document.documentElement.lang = locale;
+        const t = this.I18N[locale] || this.I18N['zh-CN'];
+        const brand = portal?.brand_name || 'Servify';
+        this.t = (k, vars = {}) => {
+          const v = t[k];
+          if (typeof v === 'function') return v(vars, brand, locale);
+          return v || '';
+        };
+        document.title = this.t('title');
+        document.getElementById('page-h1').textContent = this.t('pageH1');
+        document.getElementById('page-subtitle').textContent = this.t('pageSubtitle');
+        document.getElementById('loading-text').textContent = this.t('loading');
+        document.getElementById('ticket-info-title').textContent = this.t('ticketInfo');
+        document.getElementById('lbl-ticket-title').textContent = this.t('lblTicketTitle');
+        document.getElementById('lbl-ticket-id').textContent = this.t('lblTicketId');
+        document.getElementById('lbl-agent-name').textContent = this.t('lblAgentName');
+        document.getElementById('lbl-resolved-time').textContent = this.t('lblResolvedTime');
+        document.getElementById('lbl-rating').textContent = this.t('lblRating');
+        document.getElementById('rating-text').textContent = this.t('rating0');
+        document.getElementById('lbl-category').textContent = this.t('lblCategory');
+        document.getElementById('lbl-comment').textContent = this.t('lblComment');
+        document.getElementById('comment').placeholder = this.t('commentPh');
+        document.getElementById('submit-btn').textContent = this.t('submit');
+        document.getElementById('success-title').textContent = this.t('successTitle');
+        document.getElementById('success-text').textContent = this.t('successText');
+        const select = document.getElementById('category');
+        const opt = (val) => select.querySelector(`option[value="${val}"]`);
+        opt('overall').textContent = this.t('catOverall');
+        opt('service_quality').textContent = this.t('catServiceQuality');
+        opt('response_time').textContent = this.t('catResponseTime');
+        opt('resolution_quality').textContent = this.t('catResolutionQuality');
+        this.starRating.setRatingTexts({
+          0: this.t('rating0'),
+          1: this.t('rating1'),
+          2: this.t('rating2'),
+          3: this.t('rating3'),
+          4: this.t('rating4'),
+          5: this.t('rating5'),
+        });
+      }
+
+      formatDate(dt) {
+        if (!dt) return '-';
         try {
+          return new Date(dt).toLocaleString(this.locale || undefined);
+        } catch {
+          return '-';
+        }
+      }
+
+      async init() {
+        this.I18N = {
+          'zh-CN': {
+            title: (_vars, brand) => `满意度评价 - ${brand}`,
+            pageH1: '🌟 客户满意度评价',
+            pageSubtitle: '您的反馈对我们很重要，请为本次服务体验打分',
+            loading: '正在加载工单信息...',
+            ticketInfo: '工单信息',
+            lblTicketTitle: '工单标题:',
+            lblTicketId: '工单编号:',
+            lblAgentName: '处理客服:',
+            lblResolvedTime: '解决时间:',
+            lblRating: '整体满意度',
+            rating0: '请选择评分',
+            rating1: '很不满意',
+            rating2: '不满意',
+            rating3: '一般',
+            rating4: '满意',
+            rating5: '非常满意',
+            lblCategory: '评价类型',
+            catOverall: '整体满意度',
+            catServiceQuality: '服务质量',
+            catResponseTime: '响应速度',
+            catResolutionQuality: '问题解决质量',
+            lblComment: '详细反馈',
+            commentPh: '请分享您对本次服务的具体意见和建议，您的反馈将帮助我们持续改进服务质量...',
+            submit: '提交评价',
+            submitting: '提交中...',
+            errMissingParams: '缺少必要参数：工单ID或客户ID',
+            errLoadFailed: ({ message }) => `加载失败：${message}`,
+            errLoadSurveyFailed: ({ message }) => `无法加载调查信息：${message}`,
+            errPickRating: '请选择满意度评分',
+            errSubmitFailed: ({ message }) => `提交失败：${message}`,
+            alreadyRated: '您已经对此工单进行过评价，感谢您的反馈！',
+            surveyCompleted: '您已完成此次调查，感谢参与！',
+            surveyExpired: '抱歉，本次调查已过期。',
+            successTitle: '🎉 感谢您的反馈！',
+            successText: '您的评价已成功提交，我们将认真对待您的每一条建议。',
+            agentSystem: '系统处理',
+          },
+          'en-US': {
+            title: (_vars, brand) => `Satisfaction Survey - ${brand}`,
+            pageH1: '🌟 Customer Satisfaction',
+            pageSubtitle: 'Your feedback matters. Please rate your experience.',
+            loading: 'Loading ticket information...',
+            ticketInfo: 'Ticket',
+            lblTicketTitle: 'Title:',
+            lblTicketId: 'Ticket ID:',
+            lblAgentName: 'Agent:',
+            lblResolvedTime: 'Resolved at:',
+            lblRating: 'Overall Rating',
+            rating0: 'Select a rating',
+            rating1: 'Very dissatisfied',
+            rating2: 'Dissatisfied',
+            rating3: 'Neutral',
+            rating4: 'Satisfied',
+            rating5: 'Very satisfied',
+            lblCategory: 'Category',
+            catOverall: 'Overall',
+            catServiceQuality: 'Service quality',
+            catResponseTime: 'Response time',
+            catResolutionQuality: 'Resolution quality',
+            lblComment: 'Feedback',
+            commentPh: 'Share details about your experience...',
+            submit: 'Submit',
+            submitting: 'Submitting...',
+            errMissingParams: 'Missing required parameters: ticket_id or customer_id',
+            errLoadFailed: ({ message }) => `Load failed: ${message}`,
+            errLoadSurveyFailed: ({ message }) => `Failed to load survey: ${message}`,
+            errPickRating: 'Please select a rating',
+            errSubmitFailed: ({ message }) => `Submit failed: ${message}`,
+            alreadyRated: 'You have already submitted feedback for this ticket. Thank you!',
+            surveyCompleted: 'You have already completed this survey. Thank you!',
+            surveyExpired: 'Sorry, this survey has expired.',
+            successTitle: '🎉 Thanks for your feedback!',
+            successText: 'Your response has been submitted successfully.',
+            agentSystem: 'System',
+          },
+        };
+
+        try {
+          const portal = await this.loadPortalConfig();
+          this.applyBranding(portal);
+          this.applyI18n(portal);
+
           if (this.surveyToken) {
             await this.loadSurveyPreview();
             this.setupForm();
@@ -461,7 +605,7 @@
           }
 
           if (!this.ticketId || !this.customerId) {
-            this.showError('缺少必要参数：工单ID或客户ID');
+            this.showError(this.t('errMissingParams'));
             return;
           }
 
@@ -472,8 +616,33 @@
         } catch (error) {
           // loadSurveyPreview 已经展示了错误信息
           if (!this.surveyToken) {
-            this.showError(`加载失败：${error.message}`);
+            this.showError(this.t('errLoadFailed', { message: error.message }));
           }
+        }
+      }
+
+      async loadSurveyPreview() {
+        try {
+          const preview = await this.publicApi.request(`/csat/${this.surveyToken}`);
+          this.ticketId = preview.ticket_id;
+          document.getElementById('ticket-title').textContent = preview.ticket_title || '-';
+          document.getElementById('ticket-id').textContent = preview.ticket_id || '-';
+          document.getElementById('agent-name').textContent = preview.agent_name || this.t('agentSystem');
+          document.getElementById('resolved-time').textContent = preview.resolved_at ? this.formatDate(preview.resolved_at) : '-';
+
+          if (preview.status === 'completed') {
+            this.showSuccess(this.t('surveyCompleted'));
+            throw new Error('Survey completed');
+          }
+          if (preview.status === 'expired') {
+            this.showError(this.t('surveyExpired'));
+            throw new Error('Survey expired');
+          }
+        } catch (error) {
+          if (error.message !== 'Survey completed' && error.message !== 'Survey expired') {
+            this.showError(this.t('errLoadSurveyFailed', { message: error.message }));
+          }
+          throw error;
         }
       }
 
@@ -482,9 +651,9 @@
 
         document.getElementById('ticket-title').textContent = ticket.title || '-';
         document.getElementById('ticket-id').textContent = ticket.id || '-';
-        document.getElementById('agent-name').textContent = ticket.agent?.name || '系统处理';
+        document.getElementById('agent-name').textContent = ticket.agent?.name || this.t('agentSystem');
         document.getElementById('resolved-time').textContent = ticket.resolved_at
-          ? new Date(ticket.resolved_at).toLocaleString('zh-CN')
+          ? this.formatDate(ticket.resolved_at)
           : '-';
 
         this.ticketData = ticket;
@@ -493,7 +662,7 @@
       async checkExistingSatisfaction() {
         const satisfaction = await this.api.getTicketSatisfaction(this.ticketId);
         if (satisfaction) {
-          this.showSuccess('您已经对此工单进行过评价，感谢您的反馈！');
+          this.showSuccess(this.t('alreadyRated'));
           throw new Error('Already rated');
         }
       }
@@ -511,7 +680,7 @@
         const rating = this.starRating.getRating();
 
         if (!rating) {
-          this.showError('请选择满意度评分');
+          this.showError(this.t('errPickRating'));
           return;
         }
 
@@ -520,7 +689,7 @@
 
         try {
           submitBtn.disabled = true;
-          submitBtn.textContent = '提交中...';
+          submitBtn.textContent = this.t('submitting');
 
           if (this.surveyToken) {
             await this.publicApi.request(`/csat/${this.surveyToken}/respond`, {
@@ -543,9 +712,9 @@
           await this.api.createSatisfaction(data);
           this.showSuccess();
         } catch (error) {
-          this.showError(`提交失败：${error.message}`);
+          this.showError(this.t('errSubmitFailed', { message: error.message }));
           submitBtn.disabled = false;
-          submitBtn.textContent = '提交评价';
+          submitBtn.textContent = this.t('submit');
         }
       }
 

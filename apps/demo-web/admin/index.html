@@ -15,6 +15,7 @@
       <button data-tab="tickets">工单</button>
       <button data-tab="customers">客户</button>
       <button data-tab="agents">客服</button>
+      <button data-tab="session-transfer">会话转接</button>
       <button data-tab="satisfaction">满意度评价</button>
       <button data-tab="sla">SLA 管理</button>
       <button data-tab="macros">宏与模板</button>
@@ -263,7 +264,10 @@
       <div class="panel">
         <div class="panel-head">
           <h3>工单列表</h3>
-          <button id="btn_new_ticket">新建工单</button>
+          <div class="controls">
+            <button id="btn_export_tickets_csv" type="button">导出 CSV</button>
+            <button id="btn_new_ticket" type="button">新建工单</button>
+          </div>
         </div>
 
         <!-- 工单统计图表 -->
@@ -315,14 +319,60 @@
         <form id="form_ticket">
           <input name="title" placeholder="标题" required />
           <input name="customer_id" placeholder="客户ID(可选)" />
+          <select name="category">
+            <option value="general" selected>general</option>
+            <option value="technical">technical</option>
+            <option value="billing">billing</option>
+            <option value="complaint">complaint</option>
+          </select>
           <select name="priority">
             <option value="low">低</option>
             <option value="normal" selected>正常</option>
             <option value="high">高</option>
             <option value="urgent">紧急</option>
           </select>
+          <div id="ticket_custom_fields_container"></div>
           <textarea name="description" placeholder="问题描述"></textarea>
           <button type="submit">创建</button>
+        </form>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h3>自定义字段</h3>
+          <div class="controls">
+            <button id="btn_custom_fields_refresh" type="button">刷新</button>
+          </div>
+        </div>
+        <p class="panel-desc">Key 建议使用英文小写与下划线（如 company_size），可在工单创建/导出中使用。</p>
+        <table id="tbl_custom_fields">
+          <thead>
+            <tr><th>ID</th><th>Key</th><th>名称</th><th>类型</th><th>必填</th><th>启用</th><th>操作</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <h4>创建字段</h4>
+        <form id="form_custom_field">
+          <div class="row">
+            <input name="key" placeholder="key (e.g. company_size)" required />
+            <input name="name" placeholder="名称" required />
+          </div>
+          <div class="row">
+            <select name="type" required>
+              <option value="string">string</option>
+              <option value="number">number</option>
+              <option value="boolean">boolean</option>
+              <option value="date">date</option>
+              <option value="select">select</option>
+              <option value="multiselect">multiselect</option>
+            </select>
+            <label class="checkbox"><input type="checkbox" name="required" /> 必填</label>
+            <label class="checkbox"><input type="checkbox" name="active" checked /> 启用</label>
+          </div>
+          <input name="options" placeholder="选项（select/multiselect 用，逗号分隔，如 small,large）" />
+          <textarea name="validation" class="code-input" placeholder='校验 (JSON，可选) e.g. {"min_length":2,"max_length":50}'></textarea>
+          <textarea name="show_when" class="code-input" placeholder='条件展示 (JSON，可选) e.g. {"all":[{"field":"ticket.category","op":"eq","value":"billing"}]}'></textarea>
+          <button type="submit">创建字段</button>
         </form>
       </div>
     </section>
@@ -357,6 +407,71 @@
         <table id="tbl_agents">
           <thead>
             <tr><th>ID</th><th>姓名</th><th>状态</th><th>在线</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="session-transfer" class="tab">
+      <div class="panel">
+        <h3>手动转接</h3>
+        <div class="row" style="flex-wrap: wrap;">
+          <input id="st_session_id" placeholder="session_id（如 demo_...）" style="min-width: 240px;" />
+          <input id="st_reason" placeholder="reason（可选）" style="min-width: 220px;" />
+          <input id="st_notes" placeholder="notes（可选）" style="min-width: 220px;" />
+        </div>
+        <div class="row" style="margin-top: 10px; flex-wrap: wrap;">
+          <input id="st_target_skills" placeholder="target_skills（逗号分隔，可选）" style="min-width: 260px;" />
+          <select id="st_priority" style="min-width: 160px;">
+            <option value="">priority（默认）</option>
+            <option value="low">low</option>
+            <option value="normal">normal</option>
+            <option value="high">high</option>
+            <option value="urgent">urgent</option>
+          </select>
+          <button id="btn_st_to_human" type="button">自动分配（to-human）</button>
+        </div>
+        <div class="row" style="margin-top: 10px; flex-wrap: wrap;">
+          <select id="st_target_agent">
+            <option value="">选择目标客服（to-agent）</option>
+          </select>
+          <button id="btn_st_to_agent" type="button">转给指定客服</button>
+          <small id="st_msg"></small>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h3>等待队列</h3>
+          <div class="controls">
+            <button id="btn_st_waiting_refresh" type="button">刷新</button>
+            <button id="btn_st_process_queue" type="button">处理队列（process-queue）</button>
+          </div>
+        </div>
+        <table id="tbl_waiting_records">
+          <thead>
+            <tr>
+              <th>session_id</th><th>priority</th><th>skills</th><th>reason</th><th>queued_at</th><th>status</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h3>转接历史</h3>
+          <div class="controls">
+            <input id="st_history_session_id" placeholder="session_id" />
+            <button id="btn_st_history_load" type="button">查询</button>
+          </div>
+        </div>
+        <table id="tbl_transfer_history">
+          <thead>
+            <tr>
+              <th>transferred_at</th><th>from_agent_id</th><th>to_agent_id</th><th>reason</th><th>notes</th>
+            </tr>
           </thead>
           <tbody></tbody>
         </table>

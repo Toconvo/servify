@@ -4,29 +4,29 @@
 package cli
 
 import (
-    "context"
-    "fmt"
-    "net/http"
-    "os"
-    "os/signal"
-    "sync"
-    "syscall"
-    "time"
+	"context"
+	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
 
-    "servify/apps/server/internal/config"
-    "servify/apps/server/internal/handlers"
-    "servify/apps/server/internal/services"
-    "servify/apps/server/pkg/weknora"
-    "servify/apps/server/internal/observability"
-    "go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
-    gormtracing "gorm.io/plugin/opentelemetry/tracing"
-    "gorm.io/gorm"
-    "gorm.io/gorm/logger"
-    "gorm.io/driver/postgres"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+	gormtracing "gorm.io/plugin/opentelemetry/tracing"
+	"servify/apps/server/internal/config"
+	"servify/apps/server/internal/handlers"
+	"servify/apps/server/internal/observability"
+	"servify/apps/server/internal/services"
+	"servify/apps/server/pkg/weknora"
 
-    "github.com/gin-gonic/gin"
-    "github.com/sirupsen/logrus"
-    "github.com/spf13/cobra"
+	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 )
 
 var runCmd = &cobra.Command{
@@ -41,37 +41,39 @@ func init() {
 }
 
 func run(cmd *cobra.Command, args []string) {
-    // 加载配置
-    cfg := config.Load()
+	// 加载配置
+	cfg := config.Load()
 
 	// 初始化日志系统
-    if err := config.InitLogger(cfg); err != nil {
-        logrus.Fatalf("Failed to initialize logger: %v", err)
-    }
+	if err := config.InitLogger(cfg); err != nil {
+		logrus.Fatalf("Failed to initialize logger: %v", err)
+	}
 
-    // OpenTelemetry 初始化（可选）
-    if shutdown, err := observability.SetupTracing(context.Background(), cfg); err == nil {
-        defer func() { _ = shutdown(context.Background()) }()
-    } else {
-        logrus.Warnf("init tracing: %v", err)
-    }
+	// OpenTelemetry 初始化（可选）
+	if shutdown, err := observability.SetupTracing(context.Background(), cfg); err == nil {
+		defer func() { _ = shutdown(context.Background()) }()
+	} else {
+		logrus.Warnf("init tracing: %v", err)
+	}
 
 	logrus.Info("🚀 Starting Servify with WeKnora integration...")
 
-    // 初始化数据库
-    dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=UTC", cfg.Database.Host, cfg.Database.User, cfg.Database.Password, cfg.Database.Name, cfg.Database.Port)
-    db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{ Logger: logger.Default.LogMode(logger.Warn) })
-    if err != nil {
-        logrus.Warnf("DB connect failed, message persistence disabled: %v", err)
-    }
-    if db != nil && cfg.Monitoring.Tracing.Enabled {
-        _ = db.Use(gormtracing.NewPlugin())
-    }
+	// 初始化数据库
+	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=UTC", cfg.Database.Host, cfg.Database.User, cfg.Database.Password, cfg.Database.Name, cfg.Database.Port)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Warn)})
+	if err != nil {
+		logrus.Warnf("DB connect failed, message persistence disabled: %v", err)
+	}
+	if db != nil && cfg.Monitoring.Tracing.Enabled {
+		_ = db.Use(gormtracing.NewPlugin())
+	}
 
-    // 初始化基础服务
-    wsHub := services.NewWebSocketHub()
-    if db != nil { wsHub.SetDB(db) }
-    webrtcService := services.NewWebRTCService(cfg.WebRTC.STUNServer, wsHub)
+	// 初始化基础服务
+	wsHub := services.NewWebSocketHub()
+	if db != nil {
+		wsHub.SetDB(db)
+	}
+	webrtcService := services.NewWebRTCService(cfg.WebRTC.STUNServer, wsHub)
 
 	// 初始化 WeKnora 客户端
 	var weKnoraClient weknora.WeKnoraInterface
@@ -138,15 +140,15 @@ func run(cmd *cobra.Command, args []string) {
 		logrus.Info("✅ Standard AI service initialized")
 	}
 
-    // 初始化消息路由
-    messageRouter := services.NewMessageRouter(aiService, wsHub, db)
+	// 初始化消息路由
+	messageRouter := services.NewMessageRouter(aiService, wsHub, db)
 
-    // 启动后台服务
-    logrus.Info("🔌 Starting background services...")
-    go wsHub.Run()
+	// 启动后台服务
+	logrus.Info("🔌 Starting background services...")
+	go wsHub.Run()
 
-    // 将 AI 服务注入 WebSocketHub 以便直接处理文本消息
-    wsHub.SetAIService(aiService)
+	// 将 AI 服务注入 WebSocketHub 以便直接处理文本消息
+	wsHub.SetAIService(aiService)
 
 	// 启动消息路由
 	if err := messageRouter.Start(); err != nil {
@@ -218,21 +220,21 @@ func run(cmd *cobra.Command, args []string) {
 }
 
 func setupEnhancedRouter(
-    cfg *config.Config,
-    wsHub *services.WebSocketHub,
-    webrtcService *services.WebRTCService,
-    messageRouter *services.MessageRouter,
-    aiService services.AIServiceInterface,
+	cfg *config.Config,
+	wsHub *services.WebSocketHub,
+	webrtcService *services.WebRTCService,
+	messageRouter *services.MessageRouter,
+	aiService services.AIServiceInterface,
 ) *gin.Engine {
 	router := gin.New()
 
 	// 中间件
 	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
-    router.Use(enhancedCorsMiddleware(cfg))
-    if cfg.Monitoring.Tracing.Enabled {
-        router.Use(otelgin.Middleware(cfg.Monitoring.Tracing.ServiceName))
-    }
+	router.Use(enhancedCorsMiddleware(cfg))
+	if cfg.Monitoring.Tracing.Enabled {
+		router.Use(otelgin.Middleware(cfg.Monitoring.Tracing.ServiceName))
+	}
 
 	// 速率限制中间件（如果启用）
 	if cfg.Security.RateLimiting.Enabled {
@@ -250,14 +252,14 @@ func setupEnhancedRouter(
 	router.GET("/health", healthHandler.Health)
 	router.GET("/ready", healthHandler.Ready)
 
-    // 监控端点
-    if cfg.Monitoring.Enabled {
-        router.GET(cfg.Monitoring.MetricsPath, handlers.NewMetricsHandler(wsHub, webrtcService, aiService, messageRouter, db).GetMetrics)
-    }
+	// 监控端点
+	if cfg.Monitoring.Enabled {
+		router.GET(cfg.Monitoring.MetricsPath, handlers.NewMetricsHandler(wsHub, webrtcService, aiService, messageRouter, db).GetMetrics)
+	}
 
-    // API 路由组
-    api := router.Group("/api/v1")
-    {
+	// API 路由组
+	api := router.Group("/api/v1")
+	{
 		// WebSocket 连接
 		wsHandler := handlers.NewWebSocketHandler(wsHub)
 		api.GET("/ws", wsHandler.HandleWebSocket)
@@ -272,13 +274,13 @@ func setupEnhancedRouter(
 		messageHandler := handlers.NewMessageHandler(messageRouter)
 		api.GET("/messages/platforms", messageHandler.GetPlatformStats)
 
-        // AI 相关 API
-        aiHandler := handlers.NewAIHandler(aiService)
-        aiAPI := api.Group("/ai")
-        {
-            aiAPI.POST("/query", aiHandler.ProcessQuery)
-            aiAPI.GET("/status", aiHandler.GetStatus)
-            aiAPI.GET("/metrics", aiHandler.GetMetrics)
+		// AI 相关 API
+		aiHandler := handlers.NewAIHandler(aiService)
+		aiAPI := api.Group("/ai")
+		{
+			aiAPI.POST("/query", aiHandler.ProcessQuery)
+			aiAPI.GET("/status", aiHandler.GetStatus)
+			aiAPI.GET("/metrics", aiHandler.GetMetrics)
 
 			// WeKnora 特定功能
 			if cfg.WeKnora.Enabled {
@@ -287,20 +289,20 @@ func setupEnhancedRouter(
 				aiAPI.PUT("/weknora/enable", aiHandler.EnableWeKnora)
 				aiAPI.PUT("/weknora/disable", aiHandler.DisableWeKnora)
 				aiAPI.POST("/circuit-breaker/reset", aiHandler.ResetCircuitBreaker)
-            }
-        }
+			}
+		}
 
-        // 轻量指标上报（客户端/前端）
-        ingest := handlers.NewMetricsIngestHandler(handlers.NewMetricsAggregator())
-        api.POST("/metrics/ingest", ingest.Ingest)
+		// 轻量指标上报（客户端/前端）
+		ingest := handlers.NewMetricsIngestHandler(handlers.NewMetricsAggregator())
+		api.POST("/metrics/ingest", ingest.Ingest)
 
-        // 文件上传 API（如果启用）必须放在相同作用域下，复用 api 组
-        if cfg.Upload.Enabled {
-            uploadHandler := handlers.NewUploadHandler(cfg, aiService)
-            api.POST("/upload", uploadHandler.UploadFile)
-            api.GET("/upload/status/:id", uploadHandler.GetUploadStatus)
-        }
-    }
+		// 文件上传 API（如果启用）必须放在相同作用域下，复用 api 组
+		if cfg.Upload.Enabled {
+			uploadHandler := handlers.NewUploadHandler(cfg, aiService)
+			api.POST("/upload", uploadHandler.UploadFile)
+			api.GET("/upload/status/:id", uploadHandler.GetUploadStatus)
+		}
+	}
 
 	// 静态文件服务
 	router.Static("/static", "./static")
@@ -371,78 +373,78 @@ func startHealthMonitoring(cfg *config.Config, weKnoraClient weknora.WeKnoraInte
 
 // rateLimitMiddleware 速率限制中间件
 func rateLimitMiddleware(cfg *config.Config) gin.HandlerFunc {
-    // 令牌桶实现：
-    // - 速率：RequestsPerMinute / 60 tokens/sec
-    // - 桶容量：Burst（若 Burst 未配置则退化为 RequestsPerMinute）
+	// 令牌桶实现：
+	// - 速率：RequestsPerMinute / 60 tokens/sec
+	// - 桶容量：Burst（若 Burst 未配置则退化为 RequestsPerMinute）
 
-    type bucket struct {
-        tokens    float64
-        lastRefill time.Time
-        mutex     sync.Mutex
-    }
+	type bucket struct {
+		tokens     float64
+		lastRefill time.Time
+		mutex      sync.Mutex
+	}
 
-    ratePerSec := float64(cfg.Security.RateLimiting.RequestsPerMinute) / 60.0
-    capacity := cfg.Security.RateLimiting.Burst
-    if capacity <= 0 {
-        capacity = cfg.Security.RateLimiting.RequestsPerMinute
-        if capacity <= 0 {
-            capacity = 60
-        }
-    }
+	ratePerSec := float64(cfg.Security.RateLimiting.RequestsPerMinute) / 60.0
+	capacity := cfg.Security.RateLimiting.Burst
+	if capacity <= 0 {
+		capacity = cfg.Security.RateLimiting.RequestsPerMinute
+		if capacity <= 0 {
+			capacity = 60
+		}
+	}
 
-    buckets := make(map[string]*bucket)
-    var bucketsMu sync.RWMutex
+	buckets := make(map[string]*bucket)
+	var bucketsMu sync.RWMutex
 
-    return func(c *gin.Context) {
-        clientIP := c.ClientIP()
+	return func(c *gin.Context) {
+		clientIP := c.ClientIP()
 
-        bucketsMu.RLock()
-        b, ok := buckets[clientIP]
-        bucketsMu.RUnlock()
-        if !ok {
-            bucketsMu.Lock()
-            if b, ok = buckets[clientIP]; !ok {
-                b = &bucket{tokens: float64(capacity), lastRefill: time.Now()}
-                buckets[clientIP] = b
-            }
-            bucketsMu.Unlock()
-        }
+		bucketsMu.RLock()
+		b, ok := buckets[clientIP]
+		bucketsMu.RUnlock()
+		if !ok {
+			bucketsMu.Lock()
+			if b, ok = buckets[clientIP]; !ok {
+				b = &bucket{tokens: float64(capacity), lastRefill: time.Now()}
+				buckets[clientIP] = b
+			}
+			bucketsMu.Unlock()
+		}
 
-        b.mutex.Lock()
-        now := time.Now()
-        elapsed := now.Sub(b.lastRefill).Seconds()
-        // refill
-        b.tokens += elapsed * ratePerSec
-        if b.tokens > float64(capacity) {
-            b.tokens = float64(capacity)
-        }
-        b.lastRefill = now
+		b.mutex.Lock()
+		now := time.Now()
+		elapsed := now.Sub(b.lastRefill).Seconds()
+		// refill
+		b.tokens += elapsed * ratePerSec
+		if b.tokens > float64(capacity) {
+			b.tokens = float64(capacity)
+		}
+		b.lastRefill = now
 
-        if b.tokens >= 1.0 {
-            b.tokens -= 1.0
-            b.mutex.Unlock()
-            c.Next()
-            return
-        }
+		if b.tokens >= 1.0 {
+			b.tokens -= 1.0
+			b.mutex.Unlock()
+			c.Next()
+			return
+		}
 
-        // 计算重试时间
-        need := 1.0 - b.tokens
-        retryAfter := 1
-        if ratePerSec > 0 {
-            secs := int(need/ratePerSec + 0.9999) // ceil
-            if secs > 0 {
-                retryAfter = secs
-            }
-        }
-        b.mutex.Unlock()
+		// 计算重试时间
+		need := 1.0 - b.tokens
+		retryAfter := 1
+		if ratePerSec > 0 {
+			secs := int(need/ratePerSec + 0.9999) // ceil
+			if secs > 0 {
+				retryAfter = secs
+			}
+		}
+		b.mutex.Unlock()
 
-        c.Header("Retry-After", fmt.Sprintf("%d", retryAfter))
-        c.JSON(http.StatusTooManyRequests, gin.H{
-            "error":   "Rate limit exceeded",
-            "message": fmt.Sprintf("Too many requests. Limit: %d req/min (burst %d)", cfg.Security.RateLimiting.RequestsPerMinute, capacity),
-            "retry_after": retryAfter,
-        })
-        c.Abort()
-        return
-    }
+		c.Header("Retry-After", fmt.Sprintf("%d", retryAfter))
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error":       "Rate limit exceeded",
+			"message":     fmt.Sprintf("Too many requests. Limit: %d req/min (burst %d)", cfg.Security.RateLimiting.RequestsPerMinute, capacity),
+			"retry_after": retryAfter,
+		})
+		c.Abort()
+		return
+	}
 }

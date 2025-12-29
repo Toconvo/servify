@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
@@ -21,7 +23,8 @@ func newTestDBForTickets(t *testing.T) *gorm.DB {
 
 	// Use shared in-memory DB; TicketService spawns goroutines (auto-assign) that may
 	// use a different connection.
-	db, err := gorm.Open(sqlite.Open("file:ticket_handler?mode=memory&cache=shared"), &gorm.Config{})
+	dsn := "file:ticket_handler_" + strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()) + "?mode=memory&cache=shared"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -38,6 +41,8 @@ func newTestDBForTickets(t *testing.T) *gorm.DB {
 		&models.Agent{},
 		&models.Session{},
 		&models.Ticket{},
+		&models.CustomField{},
+		&models.TicketCustomFieldValue{},
 		&models.TicketStatus{},
 		&models.TicketComment{},
 		&models.TicketFile{},
@@ -162,8 +167,8 @@ func TestTicketHandler_Create_Get_List_Assign(t *testing.T) {
 	// Bulk update: add tags + set status
 	bulkBody := map[string]any{
 		"ticket_ids":  []uint{created.ID},
-		"status":     "resolved",
-		"add_tags":   []string{"vip", "urgent"},
+		"status":      "resolved",
+		"add_tags":    []string{"vip", "urgent"},
 		"remove_tags": []string{"non-existent"},
 	}
 	b3, _ := json.Marshal(bulkBody)
@@ -188,10 +193,10 @@ func TestTicketHandler_Create_Get_List_Assign(t *testing.T) {
 
 	// Bulk unassign
 	bulkUnassign := map[string]any{
-		"ticket_ids":      []uint{created.ID},
-		"unassign_agent":  true,
-		"remove_tags":     []string{"vip"},
-		"add_tags":        []string{"after-unassign"},
+		"ticket_ids":     []uint{created.ID},
+		"unassign_agent": true,
+		"remove_tags":    []string{"vip"},
+		"add_tags":       []string{"after-unassign"},
 	}
 	b4, _ := json.Marshal(bulkUnassign)
 	w6 := httptest.NewRecorder()
@@ -207,6 +212,82 @@ func TestTicketHandler_Create_Get_List_Assign(t *testing.T) {
 	}
 	if after.AgentID != nil {
 		t.Fatalf("expected agent_id to be nil after unassign")
+	}
+}
+
+func TestTicketHandler_CustomFields_Create_Filter_Export(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := newTestDBForTickets(t)
+	logger := logrus.New()
+	logger.SetLevel(logrus.WarnLevel)
+
+	if err := db.Create(&models.User{ID: 1, Username: "c1", Name: "c1", Email: "c1@example.com", Role: "customer"}).Error; err != nil {
+		t.Fatalf("seed customer: %v", err)
+	}
+
+	now := time.Now()
+	if err := db.Create(&models.CustomField{
+		Resource:    "ticket",
+		Key:         "company_size",
+		Name:        "Company Size",
+		Type:        "select",
+		Required:    true,
+		Active:      true,
+		OptionsJSON: `["small","large"]`,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}).Error; err != nil {
+		t.Fatalf("seed custom field: %v", err)
+	}
+
+	svc := services.NewTicketService(db, logger, nil)
+	h := NewTicketHandler(svc, logger)
+
+	r := gin.New()
+	r.POST("/api/tickets", h.CreateTicket)
+	r.GET("/api/tickets", h.ListTickets)
+	r.GET("/api/tickets/export", h.ExportTicketsCSV)
+
+	// create ticket with custom field
+	body := map[string]any{
+		"title":       "T1",
+		"customer_id": 1,
+		"priority":    "normal",
+		"custom_fields": map[string]any{
+			"company_size": "large",
+		},
+	}
+	b, _ := json.Marshal(body)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/api/tickets", bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	// list with cf filter
+	w2 := httptest.NewRecorder()
+	req2, _ := http.NewRequest(http.MethodGet, "/api/tickets?cf.company_size=large&page=1&page_size=10", nil)
+	r.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("list status=%d body=%s", w2.Code, w2.Body.String())
+	}
+
+	// export with cf filter
+	w3 := httptest.NewRecorder()
+	req3, _ := http.NewRequest(http.MethodGet, "/api/tickets/export?cf.company_size=large&limit=10", nil)
+	r.ServeHTTP(w3, req3)
+	if w3.Code != http.StatusOK {
+		t.Fatalf("export status=%d body=%s", w3.Code, w3.Body.String())
+	}
+	csvText := w3.Body.String()
+	if !strings.Contains(csvText, "cf.company_size") {
+		t.Fatalf("expected csv header to include custom field, got: %s", csvText)
+	}
+	if !strings.Contains(csvText, ",large") {
+		t.Fatalf("expected csv to include custom field value, got: %s", csvText)
 	}
 }
 

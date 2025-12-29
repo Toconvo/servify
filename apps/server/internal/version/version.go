@@ -7,4 +7,3 @@ var (
 	Commit    = "none"
 	BuildTime = "unknown"
 )
-

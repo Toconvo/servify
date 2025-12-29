@@ -13,11 +13,11 @@ type SearchRequest struct {
 
 // SearchResponse 搜索响应
 type SearchResponse struct {
-	Success   bool      `json:"success"`
+	Success   bool       `json:"success"`
 	Data      SearchData `json:"data"`
-	Message   string    `json:"message"`
-	RequestID string    `json:"request_id"`
-	Duration  int64     `json:"duration_ms"`
+	Message   string     `json:"message"`
+	RequestID string     `json:"request_id"`
+	Duration  int64      `json:"duration_ms"`
 }
 
 type SearchData struct {
@@ -40,7 +40,7 @@ type SearchResult struct {
 
 // Document 文档结构
 type Document struct {
-	Type     string                 `json:"type"`     // "text", "file", "url"
+	Type     string                 `json:"type"` // "text", "file", "url"
 	Title    string                 `json:"title"`
 	Content  string                 `json:"content"`
 	URL      string                 `json:"url"`
@@ -129,11 +129,11 @@ type ChatRequest struct {
 }
 
 type ChatResponse struct {
-	Response    string         `json:"response"`
-	Sources     []SearchResult `json:"sources"`
-	Confidence  float64        `json:"confidence"`
-	Duration    int64          `json:"duration_ms"`
-	MessageID   string         `json:"message_id"`
+	Response   string         `json:"response"`
+	Sources    []SearchResult `json:"sources"`
+	Confidence float64        `json:"confidence"`
+	Duration   int64          `json:"duration_ms"`
+	MessageID  string         `json:"message_id"`
 }
 
 // API 响应基础结构
@@ -164,12 +164,12 @@ type HealthResponse struct {
 
 // 客户端配置
 type Config struct {
-	BaseURL      string        `yaml:"base_url"`
-	APIKey       string        `yaml:"api_key"`
-	TenantID     string        `yaml:"tenant_id"`
-	Timeout      time.Duration `yaml:"timeout"`
-	MaxRetries   int           `yaml:"max_retries"`
-	RetryDelay   time.Duration `yaml:"retry_delay"`
+	BaseURL    string        `yaml:"base_url"`
+	APIKey     string        `yaml:"api_key"`
+	TenantID   string        `yaml:"tenant_id"`
+	Timeout    time.Duration `yaml:"timeout"`
+	MaxRetries int           `yaml:"max_retries"`
+	RetryDelay time.Duration `yaml:"retry_delay"`
 }
 
 // 默认配置

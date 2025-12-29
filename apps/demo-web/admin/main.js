@@ -53,6 +53,11 @@
     if(!r.ok) throw new Error(`HTTP ${r.status}: ${await readErrorMessage(r)}`);
     return r.json();
   }
+  async function jgetText(url){
+    const r = await fetch(url, { headers: authHeaders() });
+    if(!r.ok) throw new Error(`HTTP ${r.status}: ${await readErrorMessage(r)}`);
+    return r.text();
+  }
   async function jpost(url, data){
     const r = await fetch(url, { method: 'POST', headers: { 'Content-Type':'application/json', ...authHeaders() }, body: JSON.stringify(data||{}) });
     if(!r.ok) throw new Error(`HTTP ${r.status}: ${await readErrorMessage(r)}`);
@@ -175,19 +180,19 @@
     };
     refreshStatus();
 
-    $('#btn_save_token')?.addEventListener('click', async () => {
-      const v = String($('#auth_token')?.value || '').trim();
-      setStoredToken(v);
-      refreshStatus();
-      await Promise.allSettled([loadDashboard(), loadTickets(), loadCustomers(), loadAgents(), loadAI(), loadAgentsForBulkControls()]);
-    });
-    $('#btn_clear_token')?.addEventListener('click', async () => {
-      setStoredToken('');
-      if ($('#auth_token')) $('#auth_token').value = '';
-      refreshStatus();
-      await Promise.allSettled([loadDashboard(), loadTickets(), loadCustomers(), loadAgents(), loadAI(), loadAgentsForBulkControls()]);
-    });
-  }
+	    $('#btn_save_token')?.addEventListener('click', async () => {
+	      const v = String($('#auth_token')?.value || '').trim();
+	      setStoredToken(v);
+	      refreshStatus();
+	      await Promise.allSettled([loadDashboard(), loadTickets(), loadCustomFields(), loadCustomers(), loadAgents(), loadAI(), loadAgentsForBulkControls(), loadSessionTransferWaiting()]);
+	    });
+	    $('#btn_clear_token')?.addEventListener('click', async () => {
+	      setStoredToken('');
+	      if ($('#auth_token')) $('#auth_token').value = '';
+	      refreshStatus();
+	      await Promise.allSettled([loadDashboard(), loadTickets(), loadCustomFields(), loadCustomers(), loadAgents(), loadAI(), loadAgentsForBulkControls(), loadSessionTransferWaiting()]);
+	    });
+	  }
 
   // 仪表板
   let dashboardCharts = {
@@ -593,6 +598,187 @@
     priority: null
   };
 
+  let ticketCustomFields = [];
+
+  function safeParseJSON(text, fallback) {
+    try {
+      if (!text) return fallback;
+      return JSON.parse(text);
+    } catch {
+      return fallback;
+    }
+  }
+
+  function customFieldConditionMet(showWhenJSON, state) {
+    if (!showWhenJSON) return true;
+    const expr = safeParseJSON(showWhenJSON, null);
+    if (!expr) return false;
+    if (Array.isArray(expr)) return expr.every(c => evalCustomFieldClause(c, state));
+    const all = Array.isArray(expr.all) ? expr.all : [];
+    const any = Array.isArray(expr.any) ? expr.any : [];
+    if (all.length && !all.every(c => evalCustomFieldClause(c, state))) return false;
+    if (any.length) return any.some(c => evalCustomFieldClause(c, state));
+    return all.length > 0;
+  }
+
+  function evalCustomFieldClause(clause, state) {
+    const field = String(clause?.field || '').trim();
+    const op = String(clause?.op || 'exists').trim().toLowerCase();
+    if (!field) return true;
+    const actual = (field in state) ? state[field] : state[`cf.${field}`];
+    const actualStr = String(actual ?? '').trim();
+    const valStr = String(clause?.value ?? '').trim();
+    switch (op) {
+      case 'exists': return actualStr !== '';
+      case 'eq': return actualStr === valStr;
+      case 'neq': return actualStr !== valStr;
+      case 'in': {
+        const v = clause?.value;
+        if (Array.isArray(v)) return v.map(x => String(x).trim()).includes(actualStr);
+        if (typeof v === 'string') return v.split(',').map(s => s.trim()).includes(actualStr);
+        return actualStr === valStr;
+      }
+      default: return false;
+    }
+  }
+
+  function getTicketFormState() {
+    const state = {};
+    state['ticket.category'] = String($('#form_ticket select[name="category"]')?.value || '').trim();
+    state['ticket.priority'] = String($('#form_ticket select[name="priority"]')?.value || '').trim();
+    $$('#ticket_custom_fields_container [data-cf-key]').forEach(el => {
+      const key = el.dataset.cfKey;
+      const type = el.dataset.cfType;
+      let value = '';
+      if (type === 'boolean') value = el.checked ? 'true' : '';
+      else value = String(el.value || '').trim();
+      state[`cf.${key}`] = value;
+      state[key] = value;
+    });
+    return state;
+  }
+
+  function updateTicketCustomFieldVisibility() {
+    const state = getTicketFormState();
+    $$('#ticket_custom_fields_container .cf-field').forEach(wrap => {
+      const showWhen = wrap.dataset.showWhenJson || '';
+      const isVisible = customFieldConditionMet(showWhen, state);
+      wrap.style.display = isVisible ? '' : 'none';
+    });
+  }
+
+  function renderTicketCustomFieldsForm(fields) {
+    const container = $('#ticket_custom_fields_container');
+    if (!container) return;
+    container.innerHTML = '';
+    const active = (fields || []).filter(f => f && f.active);
+    ticketCustomFields = active;
+    active.forEach(f => {
+      const wrap = document.createElement('div');
+      wrap.className = 'cf-field';
+      wrap.dataset.showWhenJson = f.show_when_json || '';
+
+      const label = document.createElement('label');
+      label.textContent = `${f.name || f.key}${f.required ? ' *' : ''}`;
+
+      let input;
+      const typ = f.type;
+      if (typ === 'select') {
+        input = document.createElement('select');
+        const opts = safeParseJSON(f.options_json, []);
+        input.appendChild(new Option('请选择', ''));
+        opts.forEach(o => input.appendChild(new Option(String(o), String(o))));
+      } else if (typ === 'boolean') {
+        input = document.createElement('input');
+        input.type = 'checkbox';
+      } else if (typ === 'number') {
+        input = document.createElement('input');
+        input.type = 'number';
+        input.step = 'any';
+      } else if (typ === 'date') {
+        input = document.createElement('input');
+        input.type = 'date';
+      } else {
+        input = document.createElement('input');
+        input.type = 'text';
+      }
+
+      input.dataset.cfKey = f.key;
+      input.dataset.cfType = typ;
+      if (f.required && typ !== 'boolean') input.required = true;
+
+      input.addEventListener('change', updateTicketCustomFieldVisibility);
+      input.addEventListener('input', updateTicketCustomFieldVisibility);
+
+      wrap.appendChild(label);
+      wrap.appendChild(input);
+      container.appendChild(wrap);
+    });
+    updateTicketCustomFieldVisibility();
+  }
+
+  function collectTicketCustomFields() {
+    const out = {};
+    $$('#ticket_custom_fields_container [data-cf-key]').forEach(el => {
+      const key = el.dataset.cfKey;
+      const typ = el.dataset.cfType;
+      if (!key) return;
+      if (typ === 'boolean') {
+        if (el.checked) out[key] = true;
+        return;
+      }
+      const v = String(el.value || '').trim();
+      if (!v) return;
+      if (typ === 'multiselect') {
+        out[key] = v.split(',').map(s => s.trim()).filter(Boolean);
+        return;
+      }
+      out[key] = v;
+    });
+    return out;
+  }
+
+  function renderCustomFieldsAdminTable(fields) {
+    const tbody = $('#tbl_custom_fields tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    (fields || []).forEach(f => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${f.id ?? ''}</td>
+        <td>${f.key ?? ''}</td>
+        <td>${f.name ?? ''}</td>
+        <td>${f.type ?? ''}</td>
+        <td>${f.required ? '是' : '否'}</td>
+        <td>${f.active ? '是' : '否'}</td>
+        <td>
+          <button class="btn_cf_toggle" data-id="${f.id}" data-active="${f.active ? '1' : '0'}">${f.active ? '停用' : '启用'}</button>
+          <button class="btn_cf_delete" data-id="${f.id}">删除</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  async function loadCustomFields() {
+    try {
+      const res = await jget(`${API}/custom-fields?resource=ticket&active=false`);
+      const fields = res?.data || res || [];
+      renderCustomFieldsAdminTable(fields);
+      renderTicketCustomFieldsForm(fields);
+      return fields;
+    } catch (e) {
+      const tbody = $('#tbl_custom_fields tbody');
+      if (tbody) tbody.innerHTML = `<tr><td colspan="7">加载失败: ${e.message}</td></tr>`;
+      const container = $('#ticket_custom_fields_container');
+      if (container) container.innerHTML = '';
+      return [];
+    }
+  }
+
+  $('#form_ticket select[name="category"]')?.addEventListener('change', updateTicketCustomFieldVisibility);
+  $('#form_ticket select[name="priority"]')?.addEventListener('change', updateTicketCustomFieldVisibility);
+
   function getSelectedTicketIDs() {
     return $$('.ticket_select')
       .filter(el => el.checked)
@@ -636,24 +822,184 @@
   }
 
   async function loadAgentsForBulkControls() {
-    const sel = $('#bulk_ticket_agent');
-    if (!sel) return;
-    sel.innerHTML = `<option value="">批量指派（不修改）</option>`;
+    const bulkSel = $('#bulk_ticket_agent');
+    const stSel = $('#st_target_agent');
+    if (!bulkSel && !stSel) return;
+    if (bulkSel) bulkSel.innerHTML = `<option value="">批量指派（不修改）</option>`;
+    if (stSel) stSel.innerHTML = `<option value="">选择目标客服（to-agent）</option>`;
     try {
-      const res = await jget(`${API}/agents`);
-      const agents = res.data || res || [];
-      agents.forEach(a => {
-        const userID = a.user_id ?? a.user?.id;
-        if (!userID) return;
-        const name = a.user?.name || a.user?.username || `客服${a.id ?? userID}`;
-        const opt = document.createElement('option');
-        opt.value = String(userID);
-        opt.textContent = `${name} (user_id=${userID})`;
-        sel.appendChild(opt);
-      });
+      if (bulkSel) {
+        const res = await jget(`${API}/agents`);
+        const agents = res.data || res || [];
+        agents.forEach(a => {
+          const userID = a.user_id ?? a.user?.id;
+          if (!userID) return;
+          const name = a.user?.name || a.user?.username || `客服${a.id ?? userID}`;
+          const opt = document.createElement('option');
+          opt.value = String(userID);
+          opt.textContent = `${name} (user_id=${userID})`;
+          bulkSel.appendChild(opt);
+        });
+      }
+      if (stSel) {
+        const online = await jget(`${API}/agents/online`);
+        const agents = online.data || online || [];
+        agents.forEach(a => {
+          const userID = a.user_id ?? a.userID ?? a.id;
+          if (!userID) return;
+          const name = a.name || a.username || `客服${userID}`;
+          const opt = document.createElement('option');
+          opt.value = String(userID);
+          opt.textContent = `${name} (user_id=${userID})`;
+          stSel.appendChild(opt);
+        });
+      }
     } catch (e) {
       const msg = $('#ticket_bulk_msg');
       if (msg) msg.textContent = `加载客服列表失败: ${e.message}`;
+      const msg2 = $('#st_msg');
+      if (msg2) msg2.textContent = `加载客服列表失败: ${e.message}`;
+    }
+  }
+
+  // === 会话转接（session-transfer）===
+  async function sessionTransferToHuman(sessionID) {
+    const msg = $('#st_msg');
+    if (msg) msg.textContent = '';
+    const sid = sessionID || String($('#st_session_id')?.value || '').trim();
+    if (!sid) {
+      if (msg) msg.textContent = '需要 session_id';
+      return;
+    }
+    const reason = String($('#st_reason')?.value || '').trim();
+    const notes = String($('#st_notes')?.value || '').trim();
+    const targetSkills = splitCSV($('#st_target_skills')?.value || '');
+    const priority = String($('#st_priority')?.value || '').trim();
+    const payload = { session_id: sid };
+    if (reason) payload.reason = reason;
+    if (notes) payload.notes = notes;
+    if (targetSkills.length) payload.target_skills = targetSkills;
+    if (priority) payload.priority = priority;
+    try {
+      const res = await jpost(`${API}/session-transfer/to-human`, payload);
+      if (msg) msg.textContent = res.is_waiting ? '已进入等待队列' : `已转接（new_agent_id=${res.new_agent_id || '-'})`;
+      await loadSessionTransferWaiting();
+      if ($('#st_history_session_id')) $('#st_history_session_id').value = sid;
+      await loadSessionTransferHistory(sid);
+    } catch (e) {
+      if (msg) msg.textContent = `转接失败: ${e.message}`;
+    }
+  }
+
+  async function sessionTransferToAgent() {
+    const msg = $('#st_msg');
+    if (msg) msg.textContent = '';
+    const sid = String($('#st_session_id')?.value || '').trim();
+    const targetAgent = String($('#st_target_agent')?.value || '').trim();
+    if (!sid) {
+      if (msg) msg.textContent = '需要 session_id';
+      return;
+    }
+    if (!targetAgent) {
+      if (msg) msg.textContent = '请选择目标客服';
+      return;
+    }
+    const reason = String($('#st_reason')?.value || '').trim();
+    try {
+      const res = await jpost(`${API}/session-transfer/to-agent`, {
+        session_id: sid,
+        target_agent_id: parseInt(targetAgent, 10),
+        reason: reason,
+      });
+      if (msg) msg.textContent = `已转接（new_agent_id=${res.new_agent_id || '-'})`;
+      await loadSessionTransferWaiting();
+      if ($('#st_history_session_id')) $('#st_history_session_id').value = sid;
+      await loadSessionTransferHistory(sid);
+    } catch (e) {
+      if (msg) msg.textContent = `转接失败: ${e.message}`;
+    }
+  }
+
+  async function sessionTransferCancel(sessionID) {
+    const msg = $('#st_msg');
+    if (msg) msg.textContent = '';
+    const sid = String(sessionID || $('#st_session_id')?.value || '').trim();
+    if (!sid) {
+      if (msg) msg.textContent = '需要 session_id';
+      return;
+    }
+    const reason = String($('#st_reason')?.value || '').trim();
+    try {
+      await jpost(`${API}/session-transfer/cancel`, { session_id: sid, reason });
+      if (msg) msg.textContent = '已取消（如存在）';
+      await loadSessionTransferWaiting();
+    } catch (e) {
+      if (msg) msg.textContent = `取消失败: ${e.message}`;
+    }
+  }
+
+  async function loadSessionTransferWaiting() {
+    const tbody = $('#tbl_waiting_records tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    try {
+      const res = await jget(`${API}/session-transfer/waiting?status=waiting&limit=50`);
+      const list = res.data || [];
+      if (!list.length) {
+        tbody.innerHTML = `<tr><td colspan="7">暂无等待记录</td></tr>`;
+        return;
+      }
+      list.forEach(r => {
+        const tr = document.createElement('tr');
+        const sid = r.session_id || '';
+        tr.innerHTML = `
+          <td>${sid}</td>
+          <td>${r.priority || ''}</td>
+          <td>${r.target_skills || ''}</td>
+          <td>${r.reason || ''}</td>
+          <td>${formatDateTime(r.queued_at)}</td>
+          <td>${r.status || ''}</td>
+          <td>
+            <button data-action="fill" data-session="${sid}">填入</button>
+            <button data-action="to-human" data-session="${sid}">自动分配</button>
+            <button data-action="cancel" data-session="${sid}">取消</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="7">加载失败: ${e.message}</td></tr>`;
+    }
+  }
+
+  async function loadSessionTransferHistory(sessionID) {
+    const tbody = $('#tbl_transfer_history tbody');
+    if (!tbody) return;
+    const sid = String(sessionID || $('#st_history_session_id')?.value || '').trim();
+    if (!sid) {
+      tbody.innerHTML = `<tr><td colspan="5">请输入 session_id</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = '';
+    try {
+      const list = await jget(`${API}/session-transfer/history/${encodeURIComponent(sid)}`);
+      if (!Array.isArray(list) || list.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5">暂无转接记录</td></tr>`;
+        return;
+      }
+      list.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${formatDateTime(r.transferred_at)}</td>
+          <td>${r.from_agent_id ?? '-'}</td>
+          <td>${r.to_agent_id ?? '-'}</td>
+          <td>${r.reason || ''}</td>
+          <td>${r.notes || ''}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="5">查询失败: ${e.message}</td></tr>`;
     }
   }
 
@@ -877,9 +1223,12 @@
     const fd = new FormData(ev.target);
     const data = Object.fromEntries(fd.entries());
     data.customer_id = data.customer_id ? parseInt(data.customer_id,10) : undefined;
+    const customFields = collectTicketCustomFields();
+    if (Object.keys(customFields).length) data.custom_fields = customFields;
     try {
       await jpost(`${API}/tickets`, data);
       ev.target.reset();
+      renderTicketCustomFieldsForm(ticketCustomFields);
       await loadTickets();
       alert('创建成功');
     } catch(e){ alert('创建失败: '+e.message); }
@@ -1838,16 +2187,51 @@
   initAuthControls();
   loadDashboard();
   loadTickets();
+  loadCustomFields();
   loadCustomers();
   loadAgents();
   loadAI();
   loadAgentsForBulkControls();
+  loadSessionTransferWaiting();
   loadMacros();
   loadAutomations();
   loadSatisfactions();
   loadSatisfactionStats();
   loadCSATSurveys();
   loadIntegrations();
+
+  // 会话转接事件
+  $('#btn_st_to_human')?.addEventListener('click', () => sessionTransferToHuman());
+  $('#btn_st_to_agent')?.addEventListener('click', () => sessionTransferToAgent());
+  $('#btn_st_waiting_refresh')?.addEventListener('click', () => loadSessionTransferWaiting());
+  $('#btn_st_process_queue')?.addEventListener('click', async () => {
+    const msg = $('#st_msg');
+    if (msg) msg.textContent = '';
+    try {
+      await jpost(`${API}/session-transfer/process-queue`, {});
+      if (msg) msg.textContent = '已触发队列处理';
+      await loadSessionTransferWaiting();
+    } catch (e) {
+      if (msg) msg.textContent = `处理失败: ${e.message}`;
+    }
+  });
+  $('#btn_st_history_load')?.addEventListener('click', () => loadSessionTransferHistory());
+  document.addEventListener('click', (ev) => {
+    const t = ev.target;
+    if (!t || !t.dataset) return;
+    const action = t.dataset.action;
+    const sid = t.dataset.session;
+    if (!action || !sid) return;
+    if (action === 'fill') {
+      if ($('#st_session_id')) $('#st_session_id').value = sid;
+      if ($('#st_history_session_id')) $('#st_history_session_id').value = sid;
+      loadSessionTransferHistory(sid);
+    } else if (action === 'to-human') {
+      sessionTransferToHuman(sid);
+    } else if (action === 'cancel') {
+      sessionTransferCancel(sid);
+    }
+  });
 
   // 工单批量操作
   $('#tickets_select_all')?.addEventListener('change', (ev) => {
@@ -1871,6 +2255,74 @@
     }
   });
   $('#btn_ticket_bulk_apply')?.addEventListener('click', applyTicketBulkUpdate);
+
+  $('#btn_export_tickets_csv')?.addEventListener('click', async () => {
+    try {
+      const text = await jgetText(`${API}/tickets/export?limit=5000`);
+      downloadText(`tickets_${formatDateYMD(new Date())}.csv`, text, 'text/csv;charset=utf-8');
+    } catch (e) {
+      alert('导出失败: ' + e.message);
+    }
+  });
+
+  $('#btn_custom_fields_refresh')?.addEventListener('click', loadCustomFields);
+
+  $('#tbl_custom_fields')?.addEventListener('click', async (ev) => {
+    const t = ev.target;
+    if (!t || !t.dataset) return;
+    const id = t.dataset.id;
+    if (!id) return;
+    if (t.classList.contains('btn_cf_delete')) {
+      if (!confirm('确定删除该字段？')) return;
+      try {
+        await jdel(`${API}/custom-fields/${id}`);
+        await loadCustomFields();
+      } catch (e) {
+        alert('删除失败: ' + e.message);
+      }
+    } else if (t.classList.contains('btn_cf_toggle')) {
+      const current = t.dataset.active === '1';
+      try {
+        await jput(`${API}/custom-fields/${id}`, { active: !current });
+        await loadCustomFields();
+      } catch (e) {
+        alert('更新失败: ' + e.message);
+      }
+    }
+  });
+
+  $('#form_custom_field')?.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const data = Object.fromEntries(fd.entries());
+    const payload = {
+      resource: 'ticket',
+      key: String(data.key || '').trim(),
+      name: String(data.name || '').trim(),
+      type: String(data.type || '').trim(),
+      required: !!data.required,
+      active: (data.active !== undefined),
+    };
+    const opts = splitCSV(data.options || '');
+    if (opts.length) payload.options = opts;
+    if (String(data.validation || '').trim()) {
+      try { payload.validation = JSON.parse(String(data.validation).trim()); }
+      catch { alert('校验 JSON 不是合法 JSON'); return; }
+    }
+    if (String(data.show_when || '').trim()) {
+      try { payload.show_when = JSON.parse(String(data.show_when).trim()); }
+      catch { alert('条件展示 JSON 不是合法 JSON'); return; }
+    }
+    try {
+      await jpost(`${API}/custom-fields`, payload);
+      ev.target.reset();
+      if (ev.target.active) ev.target.active.checked = true;
+      await loadCustomFields();
+      alert('创建成功');
+    } catch (e) {
+      alert('创建失败: ' + e.message);
+    }
+  });
 
   // 导航切换时加载满意度/宏数据
   // 窗口大小变化时重新调整图表大小

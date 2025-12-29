@@ -1,22 +1,22 @@
 package services
 
 import (
-    "context"
-    "fmt"
-    "github.com/sirupsen/logrus"
-    "servify/apps/server/internal/models"
-    "gorm.io/gorm"
-    "sync"
-    "time"
-    "github.com/google/uuid"
+	"context"
+	"fmt"
+	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
+	"servify/apps/server/internal/models"
+	"sync"
+	"time"
 )
 
 type MessageRouter struct {
-    platforms map[string]PlatformAdapter
-    aiService AIServiceInterface
-    wsHub     *WebSocketHub
-    db        *gorm.DB
-    mutex     sync.RWMutex
+	platforms map[string]PlatformAdapter
+	aiService AIServiceInterface
+	wsHub     *WebSocketHub
+	db        *gorm.DB
+	mutex     sync.RWMutex
 }
 
 type PlatformAdapter interface {
@@ -73,12 +73,12 @@ type RouteRule struct {
 }
 
 func NewMessageRouter(aiService AIServiceInterface, wsHub *WebSocketHub, db *gorm.DB) *MessageRouter {
-    return &MessageRouter{
-        platforms: make(map[string]PlatformAdapter),
-        aiService: aiService,
-        wsHub:     wsHub,
-        db:        db,
-    }
+	return &MessageRouter{
+		platforms: make(map[string]PlatformAdapter),
+		aiService: aiService,
+		wsHub:     wsHub,
+		db:        db,
+	}
 }
 
 func (r *MessageRouter) RegisterPlatform(platformID string, adapter PlatformAdapter) {
@@ -241,68 +241,68 @@ func (r *MessageRouter) GetPlatformStats() map[string]interface{} {
 
 // persistMessage 消息持久化
 func (r *MessageRouter) persistMessage(message UnifiedMessage) error {
-    // 如果未配置数据库，回退为日志
-    if r.db == nil {
-        logrus.WithFields(logrus.Fields{
-            "message_id":  message.ID,
-            "platform_id": message.PlatformID,
-            "user_id":     message.UserID,
-            "type":        message.Type,
-            "timestamp":   message.Timestamp,
-        }).Info("Message persisted (log-only)")
-        return nil
-    }
+	// 如果未配置数据库，回退为日志
+	if r.db == nil {
+		logrus.WithFields(logrus.Fields{
+			"message_id":  message.ID,
+			"platform_id": message.PlatformID,
+			"user_id":     message.UserID,
+			"type":        message.Type,
+			"timestamp":   message.Timestamp,
+		}).Info("Message persisted (log-only)")
+		return nil
+	}
 
-    // 确保会话存在（以 message.UserID 作为会话标识；为空则创建新会话）
-    sid := message.UserID
-    if sid == "" {
-        sid = uuid.NewString()
-    }
-    if err := r.ensureSession(sid, message.PlatformID); err != nil {
-        logrus.Warnf("ensure session failed: %v", err)
-    }
+	// 确保会话存在（以 message.UserID 作为会话标识；为空则创建新会话）
+	sid := message.UserID
+	if sid == "" {
+		sid = uuid.NewString()
+	}
+	if err := r.ensureSession(sid, message.PlatformID); err != nil {
+		logrus.Warnf("ensure session failed: %v", err)
+	}
 
-    // 映射到持久化模型
-    m := &models.Message{
-        SessionID: sid,
-        UserID:    0, // 未绑定用户ID时留空
-        Content:   message.Content,
-        Type:      string(message.Type),
-        Sender:    "user",
-        CreatedAt: time.Now(),
-    }
+	// 映射到持久化模型
+	m := &models.Message{
+		SessionID: sid,
+		UserID:    0, // 未绑定用户ID时留空
+		Content:   message.Content,
+		Type:      string(message.Type),
+		Sender:    "user",
+		CreatedAt: time.Now(),
+	}
 
-    if err := r.db.Create(m).Error; err != nil {
-        return fmt.Errorf("persist message: %w", err)
-    }
-    logrus.WithField("id", m.ID).Debug("Message stored")
-    return nil
+	if err := r.db.Create(m).Error; err != nil {
+		return fmt.Errorf("persist message: %w", err)
+	}
+	logrus.WithField("id", m.ID).Debug("Message stored")
+	return nil
 }
 
 // ensureSession 确保会话记录存在
 func (r *MessageRouter) ensureSession(sessionID string, platform string) error {
-    if r.db == nil || sessionID == "" {
-        return nil
-    }
-    var s models.Session
-    if err := r.db.First(&s, "id = ?", sessionID).Error; err != nil {
-        if err == gorm.ErrRecordNotFound {
-            s = models.Session{
-                ID:        sessionID,
-                Status:    "active",
-                Platform:  platform,
-                StartedAt: time.Now(),
-                CreatedAt: time.Now(),
-                UpdatedAt: time.Now(),
-            }
-            if err := r.db.Create(&s).Error; err != nil {
-                return fmt.Errorf("create session: %w", err)
-            }
-            return nil
-        }
-        return err
-    }
-    return nil
+	if r.db == nil || sessionID == "" {
+		return nil
+	}
+	var s models.Session
+	if err := r.db.First(&s, "id = ?", sessionID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			s = models.Session{
+				ID:        sessionID,
+				Status:    "active",
+				Platform:  platform,
+				StartedAt: time.Now(),
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			}
+			if err := r.db.Create(&s).Error; err != nil {
+				return fmt.Errorf("create session: %w", err)
+			}
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // Telegram 适配器示例
@@ -333,16 +333,16 @@ func (t *TelegramAdapter) SendMessage(chatID, message string) error {
 
 	// 示例实现框架（需要安装 telegram-bot-api 库）
 	/*
-	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", t.botToken)
-	payload := map[string]interface{}{
-		"chat_id": chatID,
-		"text":    message,
-	}
+		url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", t.botToken)
+		payload := map[string]interface{}{
+			"chat_id": chatID,
+			"text":    message,
+		}
 
-	// 发送 HTTP POST 请求
-	if err := t.sendHTTPRequest(url, payload); err != nil {
-		return fmt.Errorf("telegram API call failed: %w", err)
-	}
+		// 发送 HTTP POST 请求
+		if err := t.sendHTTPRequest(url, payload); err != nil {
+			return fmt.Errorf("telegram API call failed: %w", err)
+		}
 	*/
 
 	logrus.Debug("Telegram message sent successfully (stub implementation)")
@@ -375,29 +375,29 @@ func (t *TelegramAdapter) Start() error {
 				// 模拟从 Telegram API 获取消息
 				// 实际实现需要调用 getUpdates API
 				/*
-				url := fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates", t.botToken)
-				updates, err := t.getUpdates(url)
-				if err != nil {
-					logrus.Errorf("Failed to get Telegram updates: %v", err)
-					continue
-				}
-
-				for _, update := range updates {
-					message := UnifiedMessage{
-						ID:          fmt.Sprintf("tg_%d", update.MessageID),
-						PlatformID:  "telegram",
-						UserID:      update.From.ID,
-						Content:     update.Text,
-						Type:        MessageTypeText,
-						Timestamp:   time.Now(),
+					url := fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates", t.botToken)
+					updates, err := t.getUpdates(url)
+					if err != nil {
+						logrus.Errorf("Failed to get Telegram updates: %v", err)
+						continue
 					}
 
-					select {
-					case t.msgChan <- message:
-					default:
-						logrus.Warn("Message channel full, dropping message")
+					for _, update := range updates {
+						message := UnifiedMessage{
+							ID:          fmt.Sprintf("tg_%d", update.MessageID),
+							PlatformID:  "telegram",
+							UserID:      update.From.ID,
+							Content:     update.Text,
+							Type:        MessageTypeText,
+							Timestamp:   time.Now(),
+						}
+
+						select {
+						case t.msgChan <- message:
+						default:
+							logrus.Warn("Message channel full, dropping message")
+						}
 					}
-				}
 				*/
 			}
 		}
@@ -440,25 +440,25 @@ func (w *WeChatAdapter) SendMessage(chatID, message string) error {
 
 	// 示例实现框架
 	/*
-	// 1. 获取 access_token
-	accessToken, err := w.getAccessToken()
-	if err != nil {
-		return fmt.Errorf("failed to get WeChat access token: %w", err)
-	}
+		// 1. 获取 access_token
+		accessToken, err := w.getAccessToken()
+		if err != nil {
+			return fmt.Errorf("failed to get WeChat access token: %w", err)
+		}
 
-	// 2. 发送消息
-	url := fmt.Sprintf("https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token=%s", accessToken)
-	payload := map[string]interface{}{
-		"touser":  chatID,
-		"msgtype": "text",
-		"text": map[string]string{
-			"content": message,
-		},
-	}
+		// 2. 发送消息
+		url := fmt.Sprintf("https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token=%s", accessToken)
+		payload := map[string]interface{}{
+			"touser":  chatID,
+			"msgtype": "text",
+			"text": map[string]string{
+				"content": message,
+			},
+		}
 
-	if err := w.sendHTTPRequest(url, payload); err != nil {
-		return fmt.Errorf("WeChat API call failed: %w", err)
-	}
+		if err := w.sendHTTPRequest(url, payload); err != nil {
+			return fmt.Errorf("WeChat API call failed: %w", err)
+		}
 	*/
 
 	logrus.Debug("WeChat message sent successfully (stub implementation)")
@@ -491,31 +491,31 @@ func (w *WeChatAdapter) Start() error {
 				// 模拟从微信服务器获取消息
 				// 实际实现需要处理微信的消息推送或主动查询
 				/*
-				// 如果使用 webhook 模式，则在 HTTP 服务器中处理
-				// 如果使用轮询模式，则在这里实现查询逻辑
+					// 如果使用 webhook 模式，则在 HTTP 服务器中处理
+					// 如果使用轮询模式，则在这里实现查询逻辑
 
-				messages, err := w.getMessages()
-				if err != nil {
-					logrus.Errorf("Failed to get WeChat messages: %v", err)
-					continue
-				}
-
-				for _, msg := range messages {
-					message := UnifiedMessage{
-						ID:          fmt.Sprintf("wx_%s", msg.MsgID),
-						PlatformID:  "wechat",
-						UserID:      msg.FromUserName,
-						Content:     msg.Content,
-						Type:        MessageTypeText,
-						Timestamp:   time.Now(),
+					messages, err := w.getMessages()
+					if err != nil {
+						logrus.Errorf("Failed to get WeChat messages: %v", err)
+						continue
 					}
 
-					select {
-					case w.msgChan <- message:
-					default:
-						logrus.Warn("Message channel full, dropping WeChat message")
+					for _, msg := range messages {
+						message := UnifiedMessage{
+							ID:          fmt.Sprintf("wx_%s", msg.MsgID),
+							PlatformID:  "wechat",
+							UserID:      msg.FromUserName,
+							Content:     msg.Content,
+							Type:        MessageTypeText,
+							Timestamp:   time.Now(),
+						}
+
+						select {
+						case w.msgChan <- message:
+						default:
+							logrus.Warn("Message channel full, dropping WeChat message")
+						}
 					}
-				}
 				*/
 			}
 		}

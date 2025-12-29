@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -19,7 +20,9 @@ import (
 func newTestDBForAgents(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	db, err := gorm.Open(sqlite.Open("file:agent_handler?mode=memory&cache=shared"), &gorm.Config{})
+	name := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
+	dsn := "file:agent_handler_" + name + "?mode=memory&cache=shared"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -64,6 +67,7 @@ func TestAgentHandler_Create_Online_Status_Offline(t *testing.T) {
 
 	r := gin.New()
 	r.POST("/api/agents", h.CreateAgent)
+	r.GET("/api/agents", h.ListAgents)
 	r.POST("/api/agents/:id/online", h.AgentGoOnline)
 	r.PUT("/api/agents/:id/status", h.UpdateAgentStatus)
 	r.GET("/api/agents/online", h.GetOnlineAgents)
@@ -78,6 +82,14 @@ func TestAgentHandler_Create_Online_Status_Offline(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	// List agents (should include newly created agent)
+	wList := httptest.NewRecorder()
+	reqList, _ := http.NewRequest(http.MethodGet, "/api/agents", nil)
+	r.ServeHTTP(wList, reqList)
+	if wList.Code != http.StatusOK {
+		t.Fatalf("list status=%d body=%s", wList.Code, wList.Body.String())
 	}
 
 	// Go online

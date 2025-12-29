@@ -42,7 +42,7 @@ func (h *SLAHandler) CreateSLAConfig(c *gin.Context) {
 	var req services.SLAConfigCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:    "INVALID_REQUEST",
+			Error:   "INVALID_REQUEST",
 			Message: "请求参数格式错误: " + err.Error(),
 		})
 		return
@@ -52,20 +52,20 @@ func (h *SLAHandler) CreateSLAConfig(c *gin.Context) {
 	if err != nil {
 		if strings.Contains(err.Error(), "invalid priority") {
 			c.JSON(http.StatusBadRequest, ErrorResponse{
-				Error:    "INVALID_PRIORITY",
+				Error:   "INVALID_PRIORITY",
 				Message: "无效的优先级: " + req.Priority,
 			})
 			return
 		}
 		if strings.Contains(err.Error(), "already exists") {
 			c.JSON(http.StatusConflict, ErrorResponse{
-				Error:    "CONFIG_EXISTS",
+				Error:   "CONFIG_EXISTS",
 				Message: "该优先级/客户等级的SLA配置已存在",
 			})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:    "CREATE_FAILED",
+			Error:   "CREATE_FAILED",
 			Message: "创建SLA配置失败: " + err.Error(),
 		})
 		return
@@ -90,7 +90,7 @@ func (h *SLAHandler) GetSLAConfig(c *gin.Context) {
 	id, err := strconv.ParseUint(idParam, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:    "INVALID_ID",
+			Error:   "INVALID_ID",
 			Message: "无效的配置ID",
 		})
 		return
@@ -100,13 +100,13 @@ func (h *SLAHandler) GetSLAConfig(c *gin.Context) {
 	if err != nil {
 		if err.Error() == "SLA config not found" {
 			c.JSON(http.StatusNotFound, ErrorResponse{
-				Error:    "CONFIG_NOT_FOUND",
+				Error:   "CONFIG_NOT_FOUND",
 				Message: "SLA配置不存在",
 			})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:    "GET_FAILED",
+			Error:   "GET_FAILED",
 			Message: "获取SLA配置失败: " + err.Error(),
 		})
 		return
@@ -135,7 +135,7 @@ func (h *SLAHandler) ListSLAConfigs(c *gin.Context) {
 	var req services.SLAConfigListRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:    "INVALID_QUERY",
+			Error:   "INVALID_QUERY",
 			Message: "查询参数错误: " + err.Error(),
 		})
 		return
@@ -152,7 +152,7 @@ func (h *SLAHandler) ListSLAConfigs(c *gin.Context) {
 	configs, total, err := h.slaService.ListSLAConfigs(c.Request.Context(), &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:    "LIST_FAILED",
+			Error:   "LIST_FAILED",
 			Message: "获取SLA配置列表失败: " + err.Error(),
 		})
 		return
@@ -185,7 +185,7 @@ func (h *SLAHandler) UpdateSLAConfig(c *gin.Context) {
 	id, err := strconv.ParseUint(idParam, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:    "INVALID_ID",
+			Error:   "INVALID_ID",
 			Message: "无效的配置ID",
 		})
 		return
@@ -194,7 +194,7 @@ func (h *SLAHandler) UpdateSLAConfig(c *gin.Context) {
 	var req services.SLAConfigUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:    "INVALID_REQUEST",
+			Error:   "INVALID_REQUEST",
 			Message: "请求参数格式错误: " + err.Error(),
 		})
 		return
@@ -204,20 +204,20 @@ func (h *SLAHandler) UpdateSLAConfig(c *gin.Context) {
 	if err != nil {
 		if err.Error() == "SLA config not found" {
 			c.JSON(http.StatusNotFound, ErrorResponse{
-				Error:    "CONFIG_NOT_FOUND",
+				Error:   "CONFIG_NOT_FOUND",
 				Message: "SLA配置不存在",
 			})
 			return
 		}
 		if err.Error() == "invalid priority: "+*req.Priority {
 			c.JSON(http.StatusBadRequest, ErrorResponse{
-				Error:    "INVALID_PRIORITY",
+				Error:   "INVALID_PRIORITY",
 				Message: "无效的优先级",
 			})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:    "UPDATE_FAILED",
+			Error:   "UPDATE_FAILED",
 			Message: "更新SLA配置失败: " + err.Error(),
 		})
 		return
@@ -243,7 +243,7 @@ func (h *SLAHandler) DeleteSLAConfig(c *gin.Context) {
 	id, err := strconv.ParseUint(idParam, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:    "INVALID_ID",
+			Error:   "INVALID_ID",
 			Message: "无效的配置ID",
 		})
 		return
@@ -252,20 +252,20 @@ func (h *SLAHandler) DeleteSLAConfig(c *gin.Context) {
 	if err := h.slaService.DeleteSLAConfig(c.Request.Context(), uint(id)); err != nil {
 		if err.Error() == "SLA config not found" {
 			c.JSON(http.StatusNotFound, ErrorResponse{
-				Error:    "CONFIG_NOT_FOUND",
+				Error:   "CONFIG_NOT_FOUND",
 				Message: "SLA配置不存在",
 			})
 			return
 		}
 		if strings.Contains(err.Error(), "cannot delete SLA config") {
 			c.JSON(http.StatusConflict, ErrorResponse{
-				Error:    "HAS_VIOLATIONS",
+				Error:   "HAS_VIOLATIONS",
 				Message: "该配置有关联的违约记录，无法删除",
 			})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:    "DELETE_FAILED",
+			Error:   "DELETE_FAILED",
 			Message: "删除SLA配置失败: " + err.Error(),
 		})
 		return
@@ -294,7 +294,7 @@ func (h *SLAHandler) GetSLAConfigByPriority(c *gin.Context) {
 	config, err := h.slaService.GetSLAConfigByPriority(c.Request.Context(), priority, customerTier)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:    "GET_FAILED",
+			Error:   "GET_FAILED",
 			Message: "获取SLA配置失败: " + err.Error(),
 		})
 		return
@@ -302,7 +302,7 @@ func (h *SLAHandler) GetSLAConfigByPriority(c *gin.Context) {
 
 	if config == nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{
-			Error:    "CONFIG_NOT_FOUND",
+			Error:   "CONFIG_NOT_FOUND",
 			Message: "该优先级暂无SLA配置",
 		})
 		return
@@ -334,7 +334,7 @@ func (h *SLAHandler) ListSLAViolations(c *gin.Context) {
 	var req services.SLAViolationListRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:    "INVALID_QUERY",
+			Error:   "INVALID_QUERY",
 			Message: "查询参数错误: " + err.Error(),
 		})
 		return
@@ -351,7 +351,7 @@ func (h *SLAHandler) ListSLAViolations(c *gin.Context) {
 	violations, total, err := h.slaService.ListSLAViolations(c.Request.Context(), &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:    "LIST_FAILED",
+			Error:   "LIST_FAILED",
 			Message: "获取SLA违约列表失败: " + err.Error(),
 		})
 		return
@@ -381,7 +381,7 @@ func (h *SLAHandler) ResolveSLAViolation(c *gin.Context) {
 	id, err := strconv.ParseUint(idParam, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:    "INVALID_ID",
+			Error:   "INVALID_ID",
 			Message: "无效的违约记录ID",
 		})
 		return
@@ -390,13 +390,13 @@ func (h *SLAHandler) ResolveSLAViolation(c *gin.Context) {
 	if err := h.slaService.ResolveSLAViolation(c.Request.Context(), uint(id)); err != nil {
 		if err.Error() == "SLA violation not found" {
 			c.JSON(http.StatusNotFound, ErrorResponse{
-				Error:    "VIOLATION_NOT_FOUND",
+				Error:   "VIOLATION_NOT_FOUND",
 				Message: "SLA违约记录不存在",
 			})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:    "RESOLVE_FAILED",
+			Error:   "RESOLVE_FAILED",
 			Message: "解决SLA违约失败: " + err.Error(),
 		})
 		return
@@ -419,7 +419,7 @@ func (h *SLAHandler) GetSLAStats(c *gin.Context) {
 	stats, err := h.slaService.GetSLAStats(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:    "STATS_FAILED",
+			Error:   "STATS_FAILED",
 			Message: "获取SLA统计失败: " + err.Error(),
 		})
 		return
@@ -445,7 +445,7 @@ func (h *SLAHandler) CheckTicketSLA(c *gin.Context) {
 	ticketID, err := strconv.ParseUint(idParam, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:    "INVALID_ID",
+			Error:   "INVALID_ID",
 			Message: "无效的工单ID",
 		})
 		return
@@ -455,7 +455,7 @@ func (h *SLAHandler) CheckTicketSLA(c *gin.Context) {
 	ticket, err := h.ticketService.GetTicketByID(c.Request.Context(), uint(ticketID))
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{
-			Error:    "TICKET_NOT_FOUND",
+			Error:   "TICKET_NOT_FOUND",
 			Message: "工单不存在或已删除",
 		})
 		return
@@ -464,7 +464,7 @@ func (h *SLAHandler) CheckTicketSLA(c *gin.Context) {
 	violation, err := h.slaService.CheckSLAViolation(c.Request.Context(), ticket)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:    "CHECK_FAILED",
+			Error:   "CHECK_FAILED",
 			Message: "检查SLA状态失败: " + err.Error(),
 		})
 		return

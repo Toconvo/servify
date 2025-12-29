@@ -1,8 +1,13 @@
 package handlers
 
 import (
+	"bytes"
+	"encoding/csv"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"servify/apps/server/internal/services"
 
@@ -175,6 +180,8 @@ func (h *TicketHandler) ListTickets(c *gin.Context) {
 		return
 	}
 
+	req.CustomFieldFilters = extractCustomFieldFilters(c)
+
 	tickets, total, err := h.ticketService.ListTickets(c.Request.Context(), &req)
 	if err != nil {
 		h.logger.Errorf("Failed to list tickets: %v", err)
@@ -191,6 +198,106 @@ func (h *TicketHandler) ListTickets(c *gin.Context) {
 		Page:     req.Page,
 		PageSize: req.PageSize,
 	})
+}
+
+// ExportTicketsCSV 导出工单 CSV（包含自定义字段列）
+// @Summary 导出工单 CSV
+// @Description 导出工单数据为 CSV，支持与 ListTickets 相同的过滤参数，并额外支持 cf.<key>=<value> 过滤自定义字段
+// @Tags 工单
+// @Accept json
+// @Produce text/csv
+// @Param limit query int false "最多导出条数（默认 1000，最大 5000）"
+// @Success 200 {string} string "csv"
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/tickets/export [get]
+func (h *TicketHandler) ExportTicketsCSV(c *gin.Context) {
+	var req services.TicketListRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid query parameters", Message: err.Error()})
+		return
+	}
+	req.CustomFieldFilters = extractCustomFieldFilters(c)
+
+	limit := 1000
+	if v := c.Query("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			limit = n
+		}
+	}
+	if limit <= 0 {
+		limit = 1000
+	}
+	if limit > 5000 {
+		limit = 5000
+	}
+	req.Page = 1
+	req.PageSize = limit
+
+	fields, err := h.ticketService.ListTicketCustomFields(c.Request.Context(), true)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to load custom fields", Message: err.Error()})
+		return
+	}
+
+	tickets, _, err := h.ticketService.ListTickets(c.Request.Context(), &req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to export tickets", Message: err.Error()})
+		return
+	}
+
+	header := []string{"id", "title", "status", "priority", "category", "customer_id", "agent_id", "tags", "created_at", "updated_at"}
+	for _, f := range fields {
+		header = append(header, "cf."+f.Key)
+	}
+
+	var buf bytes.Buffer
+	w := csv.NewWriter(&buf)
+	if err := w.Write(header); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to write csv", Message: err.Error()})
+		return
+	}
+	for _, t := range tickets {
+		cf := make(map[string]string)
+		for _, v := range t.CustomFieldValues {
+			if v.CustomField.Key != "" {
+				cf[v.CustomField.Key] = v.Value
+			}
+		}
+		agentID := ""
+		if t.AgentID != nil {
+			agentID = fmt.Sprintf("%d", *t.AgentID)
+		}
+		row := []string{
+			fmt.Sprintf("%d", t.ID),
+			t.Title,
+			t.Status,
+			t.Priority,
+			t.Category,
+			fmt.Sprintf("%d", t.CustomerID),
+			agentID,
+			t.Tags,
+			t.CreatedAt.Format(time.RFC3339),
+			t.UpdatedAt.Format(time.RFC3339),
+		}
+		for _, f := range fields {
+			row = append(row, cf[f.Key])
+		}
+		if err := w.Write(row); err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to write csv", Message: err.Error()})
+			return
+		}
+	}
+	w.Flush()
+	if err := w.Error(); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to write csv", Message: err.Error()})
+		return
+	}
+
+	filename := fmt.Sprintf("tickets_%s.csv", time.Now().Format("20060102_150405"))
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	c.Data(http.StatusOK, "text/csv; charset=utf-8", buf.Bytes())
 }
 
 // AssignTicket 分配工单
@@ -444,6 +551,7 @@ func RegisterTicketRoutes(r *gin.RouterGroup, handler *TicketHandler) {
 		tickets.POST("", handler.CreateTicket)
 		tickets.POST("/bulk", handler.BulkUpdateTickets)
 		tickets.GET("", handler.ListTickets)
+		tickets.GET("/export", handler.ExportTicketsCSV)
 		tickets.GET("/stats", handler.GetTicketStats)
 		tickets.GET("/:id", handler.GetTicket)
 		tickets.PUT("/:id", handler.UpdateTicket)
@@ -451,4 +559,25 @@ func RegisterTicketRoutes(r *gin.RouterGroup, handler *TicketHandler) {
 		tickets.POST("/:id/comments", handler.AddComment)
 		tickets.POST("/:id/close", handler.CloseTicket)
 	}
+}
+
+func extractCustomFieldFilters(c *gin.Context) map[string]string {
+	out := map[string]string{}
+	q := c.Request.URL.Query()
+	for k, vals := range q {
+		if !strings.HasPrefix(k, "cf.") && !strings.HasPrefix(k, "cf_") {
+			continue
+		}
+		key := strings.TrimPrefix(k, "cf.")
+		key = strings.TrimPrefix(key, "cf_")
+		if key == "" || len(vals) == 0 {
+			continue
+		}
+		val := strings.TrimSpace(vals[0])
+		if val == "" {
+			continue
+		}
+		out[key] = val
+	}
+	return out
 }

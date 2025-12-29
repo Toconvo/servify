@@ -51,10 +51,10 @@ var _ EnhancedAIServiceInterface = (*EnhancedAIService)(nil)
 // 为原始 AIService 实现基础接口
 func (s *AIService) GetStatus(ctx context.Context) map[string]interface{} {
 	return map[string]interface{}{
-		"type":             "standard",
-		"openai_enabled":   s.openAIAPIKey != "",
-		"knowledge_base":   "legacy",
-		"document_count":   len(s.knowledgeBase.documents),
+		"type":           "standard",
+		"openai_enabled": s.openAIAPIKey != "",
+		"knowledge_base": "legacy",
+		"document_count": len(s.knowledgeBase.documents),
 	}
 }
 

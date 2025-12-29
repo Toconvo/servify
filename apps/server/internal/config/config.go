@@ -3,6 +3,7 @@ package config
 import (
 	"time"
 
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 )
 
@@ -18,6 +19,7 @@ type Config struct {
 	Log        LogConfig        `yaml:"log"`
 	Monitoring MonitoringConfig `yaml:"monitoring"`
 	Security   SecurityConfig   `yaml:"security"`
+	Portal     PortalConfig     `yaml:"portal"`
 	Upload     UploadConfig     `yaml:"upload"`
 }
 
@@ -64,15 +66,15 @@ type OpenAIConfig struct {
 }
 
 type WeKnoraConfig struct {
-	Enabled         bool                    `yaml:"enabled"`
-	BaseURL         string                  `yaml:"base_url"`
-	APIKey          string                  `yaml:"api_key"`
-	TenantID        string                  `yaml:"tenant_id"`
-	KnowledgeBaseID string                  `yaml:"knowledge_base_id"`
-	Timeout         time.Duration           `yaml:"timeout"`
-	MaxRetries      int                     `yaml:"max_retries"`
-	Search          WeKnoraSearchConfig     `yaml:"search"`
-	HealthCheck     WeKnoraHealthConfig     `yaml:"health_check"`
+	Enabled         bool                `yaml:"enabled"`
+	BaseURL         string              `yaml:"base_url"`
+	APIKey          string              `yaml:"api_key"`
+	TenantID        string              `yaml:"tenant_id"`
+	KnowledgeBaseID string              `yaml:"knowledge_base_id"`
+	Timeout         time.Duration       `yaml:"timeout"`
+	MaxRetries      int                 `yaml:"max_retries"`
+	Search          WeKnoraSearchConfig `yaml:"search"`
+	HealthCheck     WeKnoraHealthConfig `yaml:"health_check"`
 }
 
 type WeKnoraSearchConfig struct {
@@ -87,9 +89,9 @@ type WeKnoraHealthConfig struct {
 }
 
 type FallbackConfig struct {
-	Enabled         bool                    `yaml:"enabled"`
-	LegacyKBEnabled bool                    `yaml:"legacy_kb_enabled"`
-	CircuitBreaker  CircuitBreakerConfig    `yaml:"circuit_breaker"`
+	Enabled         bool                 `yaml:"enabled"`
+	LegacyKBEnabled bool                 `yaml:"legacy_kb_enabled"`
+	CircuitBreaker  CircuitBreakerConfig `yaml:"circuit_breaker"`
 }
 
 type CircuitBreakerConfig struct {
@@ -106,8 +108,8 @@ type JWTConfig struct {
 
 type LogConfig struct {
 	Level      string `yaml:"level"`
-	Format     string `yaml:"format"`     // json, text
-	Output     string `yaml:"output"`     // stdout, file, both
+	Format     string `yaml:"format"` // json, text
+	Output     string `yaml:"output"` // stdout, file, both
 	FilePath   string `yaml:"file_path"`
 	MaxSize    int    `yaml:"max_size"`    // MB
 	MaxAge     int    `yaml:"max_age"`     // days
@@ -116,37 +118,38 @@ type LogConfig struct {
 }
 
 type MonitoringConfig struct {
-    Enabled     bool                      `yaml:"enabled"`
-    MetricsPath string                    `yaml:"metrics_path"`
-    Performance PerformanceMonitorConfig  `yaml:"performance"`
-    HealthChecks HealthChecksConfig       `yaml:"health_checks"`
-    Tracing     TracingConfig             `yaml:"tracing"`
+	Enabled      bool                     `yaml:"enabled"`
+	MetricsPath  string                   `yaml:"metrics_path"`
+	Performance  PerformanceMonitorConfig `yaml:"performance"`
+	HealthChecks HealthChecksConfig       `yaml:"health_checks"`
+	Tracing      TracingConfig            `yaml:"tracing"`
 }
 
 type PerformanceMonitorConfig struct {
-	SlowQueryThreshold    time.Duration `yaml:"slow_query_threshold"`
-	EnableRequestLogging  bool          `yaml:"enable_request_logging"`
+	SlowQueryThreshold   time.Duration `yaml:"slow_query_threshold"`
+	EnableRequestLogging bool          `yaml:"enable_request_logging"`
 }
 
 type HealthChecksConfig struct {
-    Database bool `yaml:"database"`
-    Redis    bool `yaml:"redis"`
-    WeKnora  bool `yaml:"weknora"`
-    OpenAI   bool `yaml:"openai"`
+	Database bool `yaml:"database"`
+	Redis    bool `yaml:"redis"`
+	WeKnora  bool `yaml:"weknora"`
+	OpenAI   bool `yaml:"openai"`
 }
 
 // TracingConfig OpenTelemetry 追踪配置
 type TracingConfig struct {
-    Enabled     bool    `yaml:"enabled"`
-    Endpoint    string  `yaml:"endpoint"`     // OTLP gRPC 端点，例如 http://otel-collector:4317 或 0.0.0.0:4317
-    Insecure    bool    `yaml:"insecure"`     // 是否使用明文（本地/开发）
-    SampleRatio float64 `yaml:"sample_ratio"` // 采样率 0.0~1.0
-    ServiceName string  `yaml:"service_name"` // 自定义服务名，缺省使用 "servify"
+	Enabled     bool    `yaml:"enabled"`
+	Endpoint    string  `yaml:"endpoint"`     // OTLP gRPC 端点，例如 http://otel-collector:4317 或 0.0.0.0:4317
+	Insecure    bool    `yaml:"insecure"`     // 是否使用明文（本地/开发）
+	SampleRatio float64 `yaml:"sample_ratio"` // 采样率 0.0~1.0
+	ServiceName string  `yaml:"service_name"` // 自定义服务名，缺省使用 "servify"
 }
 
 type SecurityConfig struct {
 	CORS         CORSConfig         `yaml:"cors"`
 	RateLimiting RateLimitingConfig `yaml:"rate_limiting"`
+	RBAC         RBACConfig         `yaml:"rbac"`
 }
 
 type CORSConfig struct {
@@ -156,17 +159,22 @@ type CORSConfig struct {
 	AllowedHeaders []string `yaml:"allowed_headers"`
 }
 
+type RBACConfig struct {
+	Enabled bool                `yaml:"enabled"`
+	Roles   map[string][]string `yaml:"roles"`
+}
+
 type RateLimitingConfig struct {
-	Enabled            bool                   `yaml:"enabled"`
-	RequestsPerMinute  int                    `yaml:"requests_per_minute"`
-	Burst              int                    `yaml:"burst"`
-	Paths              []PathRateLimitConfig  `yaml:"paths"`
+	Enabled           bool                  `yaml:"enabled"`
+	RequestsPerMinute int                   `yaml:"requests_per_minute"`
+	Burst             int                   `yaml:"burst"`
+	Paths             []PathRateLimitConfig `yaml:"paths"`
 	// Optional: use specific header value as rate-limit key (e.g., X-Forwarded-For, X-API-Key)
-	KeyHeader         string                 `yaml:"key_header"`
+	KeyHeader string `yaml:"key_header"`
 	// Optional: bypass limit for these IPs (matches client IP)
-	WhitelistIPs      []string               `yaml:"whitelist_ips"`
+	WhitelistIPs []string `yaml:"whitelist_ips"`
 	// Optional: bypass limit for these header key values (when KeyHeader set)
-	WhitelistKeys     []string               `yaml:"whitelist_keys"`
+	WhitelistKeys []string `yaml:"whitelist_keys"`
 }
 
 // PathRateLimitConfig allows overriding rate limits for specific path prefixes.
@@ -177,18 +185,33 @@ type PathRateLimitConfig struct {
 	RequestsPerMinute int    `yaml:"requests_per_minute"`
 	Burst             int    `yaml:"burst"`
 }
+
+// PortalConfig controls public portal branding and i18n defaults for static pages.
+type PortalConfig struct {
+	BrandName      string   `yaml:"brand_name"`
+	LogoURL        string   `yaml:"logo_url"`
+	PrimaryColor   string   `yaml:"primary_color"`
+	SecondaryColor string   `yaml:"secondary_color"`
+	DefaultLocale  string   `yaml:"default_locale"` // e.g. zh-CN, en-US
+	Locales        []string `yaml:"locales"`        // allowed locales
+	SupportEmail   string   `yaml:"support_email"`
+}
 type UploadConfig struct {
-	Enabled       bool     `yaml:"enabled"`
-	MaxFileSize   string   `yaml:"max_file_size"`
-	AllowedTypes  []string `yaml:"allowed_types"`
-	StoragePath   string   `yaml:"storage_path"`
-	AutoProcess   bool     `yaml:"auto_process"`
-	AutoIndex     bool     `yaml:"auto_index"`
+	Enabled      bool     `yaml:"enabled"`
+	MaxFileSize  string   `yaml:"max_file_size"`
+	AllowedTypes []string `yaml:"allowed_types"`
+	StoragePath  string   `yaml:"storage_path"`
+	AutoProcess  bool     `yaml:"auto_process"`
+	AutoIndex    bool     `yaml:"auto_index"`
 }
 
 func Load() *Config {
 	var config Config
-	if err := viper.Unmarshal(&config); err != nil {
+	// Viper unmarshalling uses mapstructure tags by default; explicitly decode via our `yaml` tags
+	// to keep config files consistent (e.g. `stun_server`, `max_open_conns`, etc.).
+	if err := viper.Unmarshal(&config, func(dc *mapstructure.DecoderConfig) {
+		dc.TagName = "yaml"
+	}); err != nil {
 		panic(err)
 	}
 	return &config
@@ -273,27 +296,27 @@ func GetDefaultConfig() *Config {
 			MaxBackups: 3,
 			Compress:   true,
 		},
-        Monitoring: MonitoringConfig{
-            Enabled:     true,
-            MetricsPath: "/metrics",
-            Performance: PerformanceMonitorConfig{
-                SlowQueryThreshold:   1 * time.Second,
-                EnableRequestLogging: true,
-            },
-            HealthChecks: HealthChecksConfig{
-                Database: true,
-                Redis:    true,
-                WeKnora:  true,
-                OpenAI:   false,
-            },
-            Tracing: TracingConfig{
-                Enabled:     false,
-                Endpoint:    "http://localhost:4317",
-                Insecure:    true,
-                SampleRatio: 0.1,
-                ServiceName: "servify",
-            },
-        },
+		Monitoring: MonitoringConfig{
+			Enabled:     true,
+			MetricsPath: "/metrics",
+			Performance: PerformanceMonitorConfig{
+				SlowQueryThreshold:   1 * time.Second,
+				EnableRequestLogging: true,
+			},
+			HealthChecks: HealthChecksConfig{
+				Database: true,
+				Redis:    true,
+				WeKnora:  true,
+				OpenAI:   false,
+			},
+			Tracing: TracingConfig{
+				Enabled:     false,
+				Endpoint:    "http://localhost:4317",
+				Insecure:    true,
+				SampleRatio: 0.1,
+				ServiceName: "servify",
+			},
+		},
 		Security: SecurityConfig{
 			CORS: CORSConfig{
 				Enabled:        true,
@@ -306,6 +329,15 @@ func GetDefaultConfig() *Config {
 				RequestsPerMinute: 60,
 				Burst:             10,
 			},
+		},
+		Portal: PortalConfig{
+			BrandName:      "Servify",
+			LogoURL:        "",
+			PrimaryColor:   "#4299e1",
+			SecondaryColor: "#764ba2",
+			DefaultLocale:  "zh-CN",
+			Locales:        []string{"zh-CN", "en-US"},
+			SupportEmail:   "",
 		},
 		Upload: UploadConfig{
 			Enabled:      true,

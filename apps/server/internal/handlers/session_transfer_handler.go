@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 
 	"servify/apps/server/internal/models"
 	"servify/apps/server/internal/services"
@@ -130,6 +131,86 @@ func (h *SessionTransferHandler) GetTransferHistory(c *gin.Context) {
 	c.JSON(http.StatusOK, history)
 }
 
+// ListWaitingRecords 获取等待队列记录
+// @Summary 获取等待队列
+// @Description 获取等待队列记录（默认 status=waiting）
+// @Tags 会话转接
+// @Accept json
+// @Produce json
+// @Param status query string false "waiting/transferred/cancelled"
+// @Param limit query int false "返回条数（默认 50，最大 200）"
+// @Success 200 {object} map[string]interface{}
+// @Failure 500 {object} ErrorResponse
+// @Router /api/session-transfer/waiting [get]
+func (h *SessionTransferHandler) ListWaitingRecords(c *gin.Context) {
+	status := c.DefaultQuery("status", "waiting")
+	limit := 50
+	if v := c.Query("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			limit = n
+		}
+	}
+
+	records, err := h.transferService.ListWaitingRecords(c.Request.Context(), status, limit)
+	if err != nil {
+		h.logger.Errorf("Failed to list waiting records: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Failed to list waiting records",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":  records,
+		"count": len(records),
+	})
+}
+
+// CancelWaiting 取消等待队列
+// @Summary 取消等待队列
+// @Description 取消会话的等待队列记录（幂等）
+// @Tags 会话转接
+// @Accept json
+// @Produce json
+// @Param cancel body map[string]string true "取消信息"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/session-transfer/cancel [post]
+func (h *SessionTransferHandler) CancelWaiting(c *gin.Context) {
+	var req struct {
+		SessionID string `json:"session_id" binding:"required"`
+		Reason    string `json:"reason"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid request body",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	operatorID, exists := c.Get("user_id")
+	if !exists {
+		operatorID = uint(0)
+	}
+
+	if err := h.transferService.CancelWaitingRecord(c.Request.Context(), req.SessionID, operatorID.(uint), req.Reason); err != nil {
+		h.logger.Errorf("Failed to cancel waiting for session %s: %v", req.SessionID, err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Failed to cancel waiting record",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":    "Waiting record cancelled (if existed)",
+		"session_id": req.SessionID,
+	})
+}
+
 // ProcessWaitingQueue 处理等待队列
 // @Summary 处理等待队列
 // @Description 手动触发等待队列处理，分配等待中的会话给可用客服
@@ -206,6 +287,8 @@ func RegisterSessionTransferRoutes(r *gin.RouterGroup, handler *SessionTransferH
 		transfer.POST("/to-human", handler.TransferToHuman)
 		transfer.POST("/to-agent", handler.TransferToAgent)
 		transfer.GET("/history/:session_id", handler.GetTransferHistory)
+		transfer.GET("/waiting", handler.ListWaitingRecords)
+		transfer.POST("/cancel", handler.CancelWaiting)
 		transfer.POST("/process-queue", handler.ProcessWaitingQueue)
 		transfer.POST("/check-auto", handler.CheckAutoTransfer)
 	}

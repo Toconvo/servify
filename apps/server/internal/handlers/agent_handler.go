@@ -231,6 +231,35 @@ func (h *AgentHandler) GetOnlineAgents(c *gin.Context) {
 	c.JSON(http.StatusOK, agents)
 }
 
+// ListAgents 获取全部客服列表（包含 User 信息）
+// @Summary 获取客服列表
+// @Description 获取客服列表（用于批量指派下拉/后台管理）
+// @Tags 客服管理
+// @Accept json
+// @Produce json
+// @Param limit query int false "返回条数（默认 200，最大 500）"
+// @Success 200 {array} models.Agent
+// @Failure 500 {object} ErrorResponse
+// @Router /api/agents [get]
+func (h *AgentHandler) ListAgents(c *gin.Context) {
+	limit := 200
+	if v := c.Query("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			limit = n
+		}
+	}
+	agents, err := h.agentService.ListAgents(c.Request.Context(), limit)
+	if err != nil {
+		h.logger.Errorf("Failed to list agents: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Failed to list agents",
+			Message: err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": agents})
+}
+
 // AssignSession 分配会话给客服
 // @Summary 分配会话给客服
 // @Description 将会话分配给指定的客服
@@ -397,6 +426,7 @@ func RegisterAgentRoutes(r *gin.RouterGroup, handler *AgentHandler) {
 	agents := r.Group("/agents")
 	{
 		agents.POST("", handler.CreateAgent)
+		agents.GET("", handler.ListAgents)
 		agents.GET("/online", handler.GetOnlineAgents)
 		agents.GET("/stats", handler.GetAgentStats)
 		agents.GET("/find-available", handler.FindAvailableAgent)

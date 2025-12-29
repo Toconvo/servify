@@ -120,7 +120,9 @@ func main() {
 	// 根据需要迁移（此处默认迁移，生产可改为条件控制）
 	if err := db.AutoMigrate(
 		&models.User{}, &models.Customer{}, &models.Agent{}, &models.Session{}, &models.Message{},
+		&models.TransferRecord{}, &models.WaitingRecord{},
 		&models.Ticket{}, &models.TicketComment{}, &models.TicketFile{}, &models.TicketStatus{},
+		&models.CustomField{}, &models.TicketCustomFieldValue{},
 		&models.KnowledgeDoc{}, &models.WebRTCConnection{}, &models.DailyStats{},
 		&models.SLAConfig{}, &models.SLAViolation{}, &models.CustomerSatisfaction{}, &models.SatisfactionSurvey{}, &models.AppIntegration{}, &models.ShiftSchedule{},
 		&models.AutomationTrigger{}, &models.AutomationRun{}, &models.Macro{},
@@ -168,7 +170,7 @@ func main() {
 	agentService := services.NewAgentService(db, appLogger)
 	ticketService := services.NewTicketService(db, appLogger, slaService)
 	ticketService.SetAutomationService(automationService)
-	sessionTransferService := services.NewSessionTransferService(db, appLogger, aiService, agentService, nil)
+	sessionTransferService := services.NewSessionTransferService(db, appLogger, aiService, agentService, wsHub)
 	statisticsService := services.NewStatisticsService(db, appLogger)
 	satisfactionService := services.NewSatisfactionService(db, appLogger)
 	ticketService.SetSatisfactionService(satisfactionService)
@@ -176,6 +178,10 @@ func main() {
 	workspaceService := services.NewWorkspaceService(db, agentService)
 	macroService := services.NewMacroService(db)
 	appIntegrationService := services.NewAppIntegrationService(db, appLogger)
+	customFieldService := services.NewCustomFieldService(db)
+	knowledgeDocService := services.NewKnowledgeDocService(db)
+	suggestionService := services.NewSuggestionService(db)
+	gamificationService := services.NewGamificationService(db)
 
 	// 启动统计服务后台任务
 	go statisticsService.StartDailyStatsWorker()
@@ -216,28 +222,77 @@ func main() {
 	api := r.Group("/api")
 	// 全部管理接口先做鉴权
 	api.Use(middleware.AuthMiddleware(cfg))
-	// staff: admin 或 agent 可访问
-	staff := api.Group("/")
-	staff.Use(middleware.RequireRolesAny("admin", "agent"))
-	handlers.RegisterCustomerRoutes(staff, customerHandler(customerService, appLogger))
-	handlers.RegisterAgentRoutes(staff, agentHandler(agentService, appLogger))
-	handlers.RegisterTicketRoutes(staff, ticketHandler(ticketService, appLogger))
-	handlers.RegisterSessionTransferRoutes(staff, transferHandler(sessionTransferService, appLogger))
-	handlers.RegisterSatisfactionRoutes(staff, satisfactionHandler(satisfactionService, appLogger))
-	handlers.RegisterWorkspaceRoutes(staff, workspaceHandler(workspaceService))
-	handlers.RegisterMacroRoutes(staff, macroHandler(macroService))
-	handlers.RegisterAppIntegrationRoutes(staff, appMarketHandler(appIntegrationService))
-	// 仅 admin 的接口
-	admin := api.Group("/")
-	admin.Use(middleware.RequireRolesAny("admin"))
-	handlers.RegisterStatisticsRoutes(admin, statisticsHandler(statisticsService, appLogger))
-	handlers.RegisterSLARoutes(admin, slaHandler(slaService, ticketService, appLogger))
-	handlers.RegisterShiftRoutes(admin, shiftHandler(shiftService))
-	handlers.RegisterAutomationRoutes(admin, automationHandler(automationService))
+
+	// Fine-grained RBAC by resource
+	customersAPI := api.Group("/")
+	customersAPI.Use(middleware.RequireResourcePermission("customers"))
+	handlers.RegisterCustomerRoutes(customersAPI, customerHandler(customerService, appLogger))
+
+	agentsAPI := api.Group("/")
+	agentsAPI.Use(middleware.RequireResourcePermission("agents"))
+	handlers.RegisterAgentRoutes(agentsAPI, agentHandler(agentService, appLogger))
+
+	ticketsAPI := api.Group("/")
+	ticketsAPI.Use(middleware.RequireResourcePermission("tickets"))
+	handlers.RegisterTicketRoutes(ticketsAPI, ticketHandler(ticketService, appLogger))
+
+	sessionTransferAPI := api.Group("/")
+	sessionTransferAPI.Use(middleware.RequireResourcePermission("session_transfer"))
+	handlers.RegisterSessionTransferRoutes(sessionTransferAPI, transferHandler(sessionTransferService, appLogger))
+
+	satisfactionAPI := api.Group("/")
+	satisfactionAPI.Use(middleware.RequireResourcePermission("satisfaction"))
+	handlers.RegisterSatisfactionRoutes(satisfactionAPI, satisfactionHandler(satisfactionService, appLogger))
+
+	workspaceAPI := api.Group("/")
+	workspaceAPI.Use(middleware.RequireResourcePermission("workspace"))
+	handlers.RegisterWorkspaceRoutes(workspaceAPI, workspaceHandler(workspaceService))
+
+	macrosAPI := api.Group("/")
+	macrosAPI.Use(middleware.RequireResourcePermission("macros"))
+	handlers.RegisterMacroRoutes(macrosAPI, macroHandler(macroService))
+
+	integrationsAPI := api.Group("/")
+	integrationsAPI.Use(middleware.RequireResourcePermission("integrations"))
+	handlers.RegisterAppIntegrationRoutes(integrationsAPI, appMarketHandler(appIntegrationService))
+
+	customFieldsAPI := api.Group("/")
+	customFieldsAPI.Use(middleware.RequireResourcePermission("custom_fields"))
+	handlers.RegisterCustomFieldRoutes(customFieldsAPI, handlers.NewCustomFieldHandler(customFieldService))
+
+	statisticsAPI := api.Group("/")
+	statisticsAPI.Use(middleware.RequireResourcePermission("statistics"))
+	handlers.RegisterStatisticsRoutes(statisticsAPI, statisticsHandler(statisticsService, appLogger))
+
+	slaAPI := api.Group("/")
+	slaAPI.Use(middleware.RequireResourcePermission("sla"))
+	handlers.RegisterSLARoutes(slaAPI, slaHandler(slaService, ticketService, appLogger))
+
+	shiftAPI := api.Group("/")
+	shiftAPI.Use(middleware.RequireResourcePermission("shift"))
+	handlers.RegisterShiftRoutes(shiftAPI, shiftHandler(shiftService))
+
+	automationAPI := api.Group("/")
+	automationAPI.Use(middleware.RequireResourcePermission("automation"))
+	handlers.RegisterAutomationRoutes(automationAPI, automationHandler(automationService))
+
+	knowledgeAPI := api.Group("/")
+	knowledgeAPI.Use(middleware.RequireResourcePermission("knowledge"))
+	handlers.RegisterKnowledgeDocRoutes(knowledgeAPI, handlers.NewKnowledgeDocHandler(knowledgeDocService))
+
+	assistAPI := api.Group("/")
+	assistAPI.Use(middleware.RequireResourcePermission("assist"))
+	handlers.RegisterSuggestionRoutes(assistAPI, handlers.NewSuggestionHandler(suggestionService))
+
+	gamificationAPI := api.Group("/")
+	gamificationAPI.Use(middleware.RequireResourcePermission("gamification"))
+	handlers.RegisterGamificationRoutes(gamificationAPI, handlers.NewGamificationHandler(gamificationService))
 
 	// 公共（无需登录）API
 	public := r.Group("/public")
 	handlers.RegisterCSATSurveyRoutes(public, csatSurveyHandler(satisfactionService))
+	handlers.RegisterPublicKnowledgeBaseRoutes(public, handlers.NewKnowledgeDocHandler(knowledgeDocService))
+	public.GET("/portal/config", handlers.NewPortalConfigHandler(cfg).Get)
 
 	// v1 路由组（实时/AI 与静态服务）
 	v1 := r.Group("/api/v1")
@@ -274,6 +329,9 @@ func main() {
 		ingest := handlers.NewMetricsIngestHandler(handlers.NewMetricsAggregator())
 		v1.POST("/metrics/ingest", ingest.Ingest)
 	}
+
+	// WebSocket 层支持“转人工”触发
+	wsHub.SetSessionTransferService(sessionTransferService)
 
 	// 静态资源：尝试多种路径（本地运行/容器内）
 	staticRoots := []string{

@@ -67,12 +67,52 @@ func (h *AutomationHandler) DeleteTrigger(c *gin.Context) {
 	c.JSON(http.StatusOK, SuccessResponse{Message: "deleted"})
 }
 
+// ListRuns 获取自动化执行记录
+func (h *AutomationHandler) ListRuns(c *gin.Context) {
+	var req services.AutomationRunListRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid query parameters", Message: err.Error()})
+		return
+	}
+	runs, total, err := h.service.ListRuns(c.Request.Context(), &req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to list runs", Message: err.Error()})
+		return
+	}
+	page := req.Page
+	if page <= 0 {
+		page = 1
+	}
+	pageSize := req.PageSize
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	c.JSON(http.StatusOK, PaginatedResponse{Data: runs, Total: total, Page: page, PageSize: pageSize})
+}
+
+// RunBatch 批量执行某个自动化 event（支持 dry-run）
+func (h *AutomationHandler) RunBatch(c *gin.Context) {
+	var req services.AutomationBatchRunRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Message: err.Error()})
+		return
+	}
+	resp, err := h.service.BatchRun(c.Request.Context(), &req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Failed to run automations", Message: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
 // RegisterAutomationRoutes 注册路由
 func RegisterAutomationRoutes(r *gin.RouterGroup, handler *AutomationHandler) {
 	auto := r.Group("/automations")
 	{
 		auto.GET("", handler.ListTriggers)
 		auto.POST("", handler.CreateTrigger)
-		auto.DELETE(":id", handler.DeleteTrigger)
+		auto.DELETE("/:id", handler.DeleteTrigger)
+		auto.GET("/runs", handler.ListRuns)
+		auto.POST("/run", handler.RunBatch)
 	}
 }

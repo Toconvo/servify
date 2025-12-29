@@ -32,30 +32,30 @@ func NewStatisticsService(db *gorm.DB, logger *logrus.Logger) *StatisticsService
 // DashboardStats 仪表板统计数据
 type DashboardStats struct {
 	// 总体统计
-	TotalCustomers    int64 `json:"total_customers"`
-	TotalAgents       int64 `json:"total_agents"`
-	TotalTickets      int64 `json:"total_tickets"`
-	TotalSessions     int64 `json:"total_sessions"`
+	TotalCustomers int64 `json:"total_customers"`
+	TotalAgents    int64 `json:"total_agents"`
+	TotalTickets   int64 `json:"total_tickets"`
+	TotalSessions  int64 `json:"total_sessions"`
 
 	// 今日统计
-	TodayTickets      int64 `json:"today_tickets"`
-	TodaySessions     int64 `json:"today_sessions"`
-	TodayMessages     int64 `json:"today_messages"`
+	TodayTickets  int64 `json:"today_tickets"`
+	TodaySessions int64 `json:"today_sessions"`
+	TodayMessages int64 `json:"today_messages"`
 
 	// 状态统计
-	OpenTickets       int64 `json:"open_tickets"`
-	AssignedTickets   int64 `json:"assigned_tickets"`
-	ResolvedTickets   int64 `json:"resolved_tickets"`
-	ClosedTickets     int64 `json:"closed_tickets"`
+	OpenTickets     int64 `json:"open_tickets"`
+	AssignedTickets int64 `json:"assigned_tickets"`
+	ResolvedTickets int64 `json:"resolved_tickets"`
+	ClosedTickets   int64 `json:"closed_tickets"`
 
 	// 在线状态
-	OnlineAgents      int64 `json:"online_agents"`
-	BusyAgents        int64 `json:"busy_agents"`
-	ActiveSessions    int64 `json:"active_sessions"`
+	OnlineAgents   int64 `json:"online_agents"`
+	BusyAgents     int64 `json:"busy_agents"`
+	ActiveSessions int64 `json:"active_sessions"`
 
 	// 性能指标
-	AvgResponseTime   float64 `json:"avg_response_time"`
-	AvgResolutionTime float64 `json:"avg_resolution_time"`
+	AvgResponseTime      float64 `json:"avg_response_time"`
+	AvgResolutionTime    float64 `json:"avg_resolution_time"`
 	CustomerSatisfaction float64 `json:"customer_satisfaction"`
 
 	// AI 使用统计
@@ -65,26 +65,26 @@ type DashboardStats struct {
 
 // TimeRangeStats 时间范围统计
 type TimeRangeStats struct {
-	Date             string  `json:"date"`
-	Tickets          int64   `json:"tickets"`
-	Sessions         int64   `json:"sessions"`
-	Messages         int64   `json:"messages"`
-	ResolvedTickets  int64   `json:"resolved_tickets"`
-	AvgResponseTime  float64 `json:"avg_response_time"`
+	Date                 string  `json:"date"`
+	Tickets              int64   `json:"tickets"`
+	Sessions             int64   `json:"sessions"`
+	Messages             int64   `json:"messages"`
+	ResolvedTickets      int64   `json:"resolved_tickets"`
+	AvgResponseTime      float64 `json:"avg_response_time"`
 	CustomerSatisfaction float64 `json:"customer_satisfaction"`
 }
 
 // AgentPerformanceStats 客服绩效统计
 type AgentPerformanceStats struct {
-	AgentID          uint    `json:"agent_id"`
-	AgentName        string  `json:"agent_name"`
-	Department       string  `json:"department"`
-	TotalTickets     int64   `json:"total_tickets"`
-	ResolvedTickets  int64   `json:"resolved_tickets"`
-	AvgResponseTime  float64 `json:"avg_response_time"`
+	AgentID           uint    `json:"agent_id"`
+	AgentName         string  `json:"agent_name"`
+	Department        string  `json:"department"`
+	TotalTickets      int64   `json:"total_tickets"`
+	ResolvedTickets   int64   `json:"resolved_tickets"`
+	AvgResponseTime   float64 `json:"avg_response_time"`
 	AvgResolutionTime float64 `json:"avg_resolution_time"`
-	Rating           float64 `json:"rating"`
-	OnlineTime       int64   `json:"online_time"` // 在线时长（分钟）
+	Rating            float64 `json:"rating"`
+	OnlineTime        int64   `json:"online_time"` // 在线时长（分钟）
 }
 
 // CategoryStats 分类统计

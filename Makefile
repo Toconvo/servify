@@ -1,6 +1,6 @@
 # Servify Makefile
 
-.PHONY: help build build-cli build-weknora run run-cli run-weknora migrate migrate-seed test clean docker-build docker-run docker-up-weknora docker-down docker-logs-weknora docker-up-observ docker-down-observ
+.PHONY: help build build-cli build-weknora run run-cli run-weknora migrate migrate-seed test clean docker-build docker-run docker-up-weknora docker-down docker-logs-weknora docker-up-observ docker-down-observ dev-setup fmt lint update-deps docs
 
 # Default target
 help:
@@ -113,7 +113,7 @@ docker-stop:
 dev-setup:
 	@echo "Setting up development environment..."
 	@echo "Installing dependencies..."
-	go mod tidy
+	go -C apps/server mod tidy
 	@echo "Creating .env file if it doesn't exist..."
 	@test -f .env || cp .env.example .env
 	@echo "Setup complete! Edit .env file with your configuration."
@@ -121,12 +121,12 @@ dev-setup:
 # Format code
 fmt:
 	@echo "Formatting code..."
-	go fmt ./...
+	go -C apps/server fmt ./...
 
 # Run linter
 lint:
 	@echo "Running linter..."
-	golangci-lint run
+	cd apps/server && golangci-lint run ./...
 
 # Update dependencies
 update-deps:

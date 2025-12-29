@@ -9,9 +9,9 @@ import (
 type CircuitBreakerState int
 
 const (
-	StateClosedCB CircuitBreakerState = iota // 关闭状态（正常）
-	StateOpenCB                              // 开启状态（熔断）
-	StateHalfOpenCB                          // 半开状态（试探）
+	StateClosedCB   CircuitBreakerState = iota // 关闭状态（正常）
+	StateOpenCB                                // 开启状态（熔断）
+	StateHalfOpenCB                            // 半开状态（试探）
 )
 
 func (s CircuitBreakerState) String() string {
@@ -29,8 +29,8 @@ func (s CircuitBreakerState) String() string {
 
 // CircuitBreakerConfig 熔断器配置
 type CircuitBreakerConfig struct {
-	MaxFailures     int           `yaml:"max_failures"`     // 最大失败次数
-	ResetTimeout    time.Duration `yaml:"reset_timeout"`    // 重置超时时间
+	MaxFailures     int           `yaml:"max_failures"`       // 最大失败次数
+	ResetTimeout    time.Duration `yaml:"reset_timeout"`      // 重置超时时间
 	HalfOpenMaxReqs int           `yaml:"half_open_max_reqs"` // 半开状态最大请求数
 }
 
@@ -167,12 +167,12 @@ func (cb *CircuitBreaker) Stats() map[string]interface{} {
 	defer cb.mutex.RUnlock()
 
 	return map[string]interface{}{
-		"state":            cb.state.String(),
-		"failure_count":    cb.failureCount,
-		"last_fail_time":   cb.lastFailTime,
-		"half_open_reqs":   cb.halfOpenReqs,
-		"max_failures":     cb.config.MaxFailures,
-		"reset_timeout":    cb.config.ResetTimeout,
+		"state":              cb.state.String(),
+		"failure_count":      cb.failureCount,
+		"last_fail_time":     cb.lastFailTime,
+		"half_open_reqs":     cb.halfOpenReqs,
+		"max_failures":       cb.config.MaxFailures,
+		"reset_timeout":      cb.config.ResetTimeout,
 		"half_open_max_reqs": cb.config.HalfOpenMaxReqs,
 	}
 }

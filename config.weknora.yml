@@ -75,6 +75,15 @@ jwt:
   secret: "default-secret-key"
   expires_in: "24h"
 
+portal:
+  brand_name: "Servify"
+  logo_url: ""
+  primary_color: "#4299e1"
+  secondary_color: "#764ba2"
+  default_locale: "zh-CN"
+  locales: ["zh-CN","en-US"]
+  support_email: ""
+
 log:
   level: "info"
   format: "json"  # "json" or "text"
@@ -109,6 +118,28 @@ security:
     allowed_origins: ["*"]  # 生产环境应限制
     allowed_methods: ["GET", "POST", "PUT", "DELETE"]
     allowed_headers: ["*"]
+
+  # 新增：细粒度 RBAC（资源级权限）
+  rbac:
+    enabled: true
+    roles:
+      admin: ["*"]
+      agent:
+        - "tickets.read"
+        - "tickets.write"
+        - "customers.read"
+        - "agents.read"
+        - "knowledge.read"
+        - "assist.read"
+        - "gamification.read"
+        - "custom_fields.read"
+        - "session_transfer.read"
+        - "session_transfer.write"
+        - "satisfaction.read"
+        - "satisfaction.write"
+        - "workspace.read"
+        - "macros.read"
+        - "integrations.read"
 
   rate_limiting:
     enabled: true

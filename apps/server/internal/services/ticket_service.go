@@ -2,8 +2,11 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -47,40 +50,43 @@ func (s *TicketService) SetSatisfactionService(satisfaction *SatisfactionService
 
 // TicketCreateRequest 创建工单请求
 type TicketCreateRequest struct {
-	Title       string `json:"title" binding:"required"`
-	Description string `json:"description"`
-	CustomerID  uint   `json:"customer_id" binding:"required"`
-	Category    string `json:"category"`
-	Priority    string `json:"priority"`
-	Source      string `json:"source"`
-	Tags        string `json:"tags"`
-	SessionID   string `json:"session_id"`
+	Title        string                 `json:"title" binding:"required"`
+	Description  string                 `json:"description"`
+	CustomerID   uint                   `json:"customer_id" binding:"required"`
+	Category     string                 `json:"category"`
+	Priority     string                 `json:"priority"`
+	Source       string                 `json:"source"`
+	Tags         string                 `json:"tags"`
+	SessionID    string                 `json:"session_id"`
+	CustomFields map[string]interface{} `json:"custom_fields"`
 }
 
 // TicketUpdateRequest 更新工单请求
 type TicketUpdateRequest struct {
-	Title       *string    `json:"title"`
-	Description *string    `json:"description"`
-	AgentID     *uint      `json:"agent_id"`
-	Category    *string    `json:"category"`
-	Priority    *string    `json:"priority"`
-	Status      *string    `json:"status"`
-	Tags        *string    `json:"tags"`
-	DueDate     *time.Time `json:"due_date"`
+	Title        *string                `json:"title"`
+	Description  *string                `json:"description"`
+	AgentID      *uint                  `json:"agent_id"`
+	Category     *string                `json:"category"`
+	Priority     *string                `json:"priority"`
+	Status       *string                `json:"status"`
+	Tags         *string                `json:"tags"`
+	DueDate      *time.Time             `json:"due_date"`
+	CustomFields map[string]interface{} `json:"custom_fields"`
 }
 
 // TicketListRequest 工单列表请求
 type TicketListRequest struct {
-	Page       int      `form:"page,default=1"`
-	PageSize   int      `form:"page_size,default=20"`
-	Status     []string `form:"status"`
-	Priority   []string `form:"priority"`
-	Category   []string `form:"category"`
-	AgentID    *uint    `form:"agent_id"`
-	CustomerID *uint    `form:"customer_id"`
-	Search     string   `form:"search"`
-	SortBy     string   `form:"sort_by,default=created_at"`
-	SortOrder  string   `form:"sort_order,default=desc"`
+	Page               int               `form:"page,default=1"`
+	PageSize           int               `form:"page_size,default=20"`
+	Status             []string          `form:"status"`
+	Priority           []string          `form:"priority"`
+	Category           []string          `form:"category"`
+	AgentID            *uint             `form:"agent_id"`
+	CustomerID         *uint             `form:"customer_id"`
+	Search             string            `form:"search"`
+	SortBy             string            `form:"sort_by,default=created_at"`
+	SortOrder          string            `form:"sort_order,default=desc"`
+	CustomFieldFilters map[string]string `form:"-" json:"-"`
 }
 
 // TicketBulkUpdateRequest 批量更新工单请求（状态/标签/指派）
@@ -100,7 +106,7 @@ type TicketBulkUpdateFailure struct {
 }
 
 type TicketBulkUpdateResult struct {
-	Updated []uint                   `json:"updated"`
+	Updated []uint                    `json:"updated"`
 	Failed  []TicketBulkUpdateFailure `json:"failed"`
 }
 
@@ -123,7 +129,18 @@ func (s *TicketService) CreateTicket(ctx context.Context, req *TicketCreateReque
 		req.Source = "web"
 	}
 
-	// 创建工单
+	// Validate and normalize custom fields (create enforces required)
+	cfValues, err := s.buildCustomFieldValues(ctx, req.CustomFields, map[string]interface{}{
+		"ticket.category": req.Category,
+		"ticket.priority": req.Priority,
+		"ticket.source":   req.Source,
+		"ticket.status":   "open",
+	}, true)
+	if err != nil {
+		return nil, err
+	}
+
+	// 创建工单 + 自定义字段值（同事务）
 	ticket := &models.Ticket{
 		Title:       req.Title,
 		Description: req.Description,
@@ -134,15 +151,24 @@ func (s *TicketService) CreateTicket(ctx context.Context, req *TicketCreateReque
 		Source:      req.Source,
 		Tags:        req.Tags,
 	}
-
-	// 如果提供了 SessionID，关联会话
 	if req.SessionID != "" {
 		ticket.SessionID = &req.SessionID
 	}
-
-	// 保存工单
-	if err := s.db.Create(ticket).Error; err != nil {
-		return nil, fmt.Errorf("failed to create ticket: %w", err)
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(ticket).Error; err != nil {
+			return fmt.Errorf("failed to create ticket: %w", err)
+		}
+		if len(cfValues) > 0 {
+			for i := range cfValues {
+				cfValues[i].TicketID = ticket.ID
+			}
+			if err := tx.Create(&cfValues).Error; err != nil {
+				return fmt.Errorf("failed to save custom fields: %w", err)
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	// 记录状态变更历史
@@ -170,6 +196,9 @@ func (s *TicketService) GetTicketByID(ctx context.Context, ticketID uint) (*mode
 	err := s.db.Preload("Customer").
 		Preload("Agent").
 		Preload("Session").
+		Preload("CustomFieldValues", func(db *gorm.DB) *gorm.DB {
+			return db.Order("custom_field_id ASC").Preload("CustomField")
+		}).
 		Preload("Comments", func(db *gorm.DB) *gorm.DB {
 			return db.Order("created_at ASC").Preload("User")
 		}).
@@ -257,6 +286,22 @@ func (s *TicketService) UpdateTicket(ctx context.Context, ticketID uint, req *Ti
 		return nil, err
 	}
 
+	// Sync custom fields (if present in request)
+	if req.CustomFields != nil {
+		if err := s.syncTicketCustomFields(ctx, ticketID, req.CustomFields, map[string]interface{}{
+			"ticket.category": updatedTicket.Category,
+			"ticket.priority": updatedTicket.Priority,
+			"ticket.source":   updatedTicket.Source,
+			"ticket.status":   updatedTicket.Status,
+		}); err != nil {
+			return nil, err
+		}
+		updatedTicket, err = s.GetTicketByID(ctx, ticketID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// 根据状态/指派变更触发 SLA 处理
 	s.evaluateTicketSLA(ctx, updatedTicket, statusChanged, agentChanged)
 
@@ -267,7 +312,10 @@ func (s *TicketService) UpdateTicket(ctx context.Context, ticketID uint, req *Ti
 func (s *TicketService) ListTickets(ctx context.Context, req *TicketListRequest) ([]models.Ticket, int64, error) {
 	query := s.db.Model(&models.Ticket{}).
 		Preload("Customer").
-		Preload("Agent")
+		Preload("Agent").
+		Preload("CustomFieldValues", func(db *gorm.DB) *gorm.DB {
+			return db.Order("custom_field_id ASC").Preload("CustomField")
+		})
 
 	// 应用过滤条件
 	if len(req.Status) > 0 {
@@ -286,6 +334,26 @@ func (s *TicketService) ListTickets(ctx context.Context, req *TicketListRequest)
 		query = query.Where("customer_id = ?", *req.CustomerID)
 	}
 
+	// Custom field filters (AND semantics)
+	if len(req.CustomFieldFilters) > 0 {
+		query = query.Distinct("tickets.id")
+		i := 0
+		for k, v := range req.CustomFieldFilters {
+			key := strings.TrimSpace(k)
+			val := strings.TrimSpace(v)
+			if key == "" || val == "" {
+				continue
+			}
+			aliasV := fmt.Sprintf("tcfv%d", i)
+			aliasF := fmt.Sprintf("cf%d", i)
+			query = query.
+				Joins(fmt.Sprintf("JOIN ticket_custom_field_values %s ON %s.ticket_id = tickets.id", aliasV, aliasV)).
+				Joins(fmt.Sprintf("JOIN custom_fields %s ON %s.id = %s.custom_field_id", aliasF, aliasF, aliasV)).
+				Where(fmt.Sprintf("%s.resource = ? AND %s.key = ? AND %s.value = ?", aliasF, aliasF, aliasV), "ticket", key, val)
+			i++
+		}
+	}
+
 	// 搜索条件
 	if req.Search != "" {
 		searchTerm := "%" + req.Search + "%"
@@ -300,7 +368,12 @@ func (s *TicketService) ListTickets(ctx context.Context, req *TicketListRequest)
 	}
 
 	// 排序
-	orderBy := fmt.Sprintf("%s %s", req.SortBy, req.SortOrder)
+	sortBy := normalizeTicketSortBy(req.SortBy)
+	sortOrder := strings.ToLower(strings.TrimSpace(req.SortOrder))
+	if sortOrder != "asc" && sortOrder != "desc" {
+		sortOrder = "desc"
+	}
+	orderBy := fmt.Sprintf("%s %s", sortBy, sortOrder)
 	query = query.Order(orderBy)
 
 	// 分页
@@ -798,4 +871,520 @@ type StatusCount struct {
 type PriorityCount struct {
 	Priority string `json:"priority"`
 	Count    int64  `json:"count"`
+}
+
+func normalizeTicketSortBy(sortBy string) string {
+	s := strings.ToLower(strings.TrimSpace(sortBy))
+	s = strings.TrimPrefix(s, "tickets.")
+	switch s {
+	case "id", "created_at", "updated_at", "priority", "status", "category", "due_date", "resolved_at", "closed_at":
+		return "tickets." + s
+	default:
+		return "tickets.created_at"
+	}
+}
+
+type customFieldCondition struct {
+	All []customFieldClause `json:"all"`
+	Any []customFieldClause `json:"any"`
+}
+
+type customFieldClause struct {
+	Field string      `json:"field"`
+	Op    string      `json:"op"`
+	Value interface{} `json:"value"`
+}
+
+type customFieldValidation struct {
+	Min       *float64 `json:"min"`
+	Max       *float64 `json:"max"`
+	MinLength *int     `json:"min_length"`
+	MaxLength *int     `json:"max_length"`
+	Regex     string   `json:"regex"`
+}
+
+// ListTicketCustomFields returns ticket custom field definitions.
+func (s *TicketService) ListTicketCustomFields(ctx context.Context, activeOnly bool) ([]models.CustomField, error) {
+	return s.listCustomFields(ctx, activeOnly)
+}
+
+func (s *TicketService) listCustomFields(ctx context.Context, activeOnly bool) ([]models.CustomField, error) {
+	q := s.db.WithContext(ctx).Model(&models.CustomField{}).Where("resource = ?", "ticket").Order("id ASC")
+	if activeOnly {
+		q = q.Where("active = ?", true)
+	}
+	var fields []models.CustomField
+	if err := q.Find(&fields).Error; err != nil {
+		return nil, err
+	}
+	return fields, nil
+}
+
+func (s *TicketService) buildCustomFieldValues(ctx context.Context, provided map[string]interface{}, ticketCtx map[string]interface{}, enforceRequired bool) ([]models.TicketCustomFieldValue, error) {
+	fields, err := s.listCustomFields(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+	fieldByKey := make(map[string]models.CustomField, len(fields))
+	for _, f := range fields {
+		fieldByKey[f.Key] = f
+	}
+
+	ctxMap := make(map[string]interface{}, len(ticketCtx)+len(provided)+8)
+	for k, v := range ticketCtx {
+		ctxMap[k] = v
+	}
+	for k, v := range provided {
+		ctxMap["cf."+k] = v
+		ctxMap[k] = v
+	}
+
+	if enforceRequired {
+		for _, f := range fields {
+			if !f.Active || !f.Required {
+				continue
+			}
+			if !customFieldConditionMet(f.ShowWhenJSON, ctxMap) {
+				continue
+			}
+			val, ok := provided[f.Key]
+			if !ok || val == nil || strings.TrimSpace(fmt.Sprint(val)) == "" {
+				return nil, fmt.Errorf("custom field %q is required", f.Key)
+			}
+		}
+	}
+
+	if len(provided) == 0 {
+		return nil, nil
+	}
+
+	now := time.Now()
+	out := make([]models.TicketCustomFieldValue, 0, len(provided))
+	for k, raw := range provided {
+		field, ok := fieldByKey[k]
+		if !ok {
+			return nil, fmt.Errorf("unknown custom field: %s", k)
+		}
+		if raw == nil || strings.TrimSpace(fmt.Sprint(raw)) == "" {
+			continue
+		}
+		if !customFieldConditionMet(field.ShowWhenJSON, ctxMap) {
+			continue
+		}
+		normalized, err := normalizeAndValidateCustomFieldValue(field, raw)
+		if err != nil {
+			return nil, fmt.Errorf("custom field %q: %w", k, err)
+		}
+		out = append(out, models.TicketCustomFieldValue{
+			CustomFieldID: field.ID,
+			Value:         normalized,
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		})
+	}
+	return out, nil
+}
+
+func (s *TicketService) syncTicketCustomFields(ctx context.Context, ticketID uint, provided map[string]interface{}, ticketCtx map[string]interface{}) error {
+	if provided == nil {
+		return nil
+	}
+	fields, err := s.listCustomFields(ctx, false)
+	if err != nil {
+		return err
+	}
+	fieldByKey := make(map[string]models.CustomField, len(fields))
+	for _, f := range fields {
+		fieldByKey[f.Key] = f
+	}
+	ctxMap := make(map[string]interface{}, len(ticketCtx)+len(provided)+8)
+	for k, v := range ticketCtx {
+		ctxMap[k] = v
+	}
+	for k, v := range provided {
+		ctxMap["cf."+k] = v
+		ctxMap[k] = v
+	}
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if len(provided) == 0 {
+			if err := tx.Where("ticket_id = ?", ticketID).Delete(&models.TicketCustomFieldValue{}).Error; err != nil {
+				return err
+			}
+			return nil
+		}
+
+		for k, raw := range provided {
+			field, ok := fieldByKey[k]
+			if !ok {
+				return fmt.Errorf("unknown custom field: %s", k)
+			}
+			if raw == nil {
+				if err := tx.Where("ticket_id = ? AND custom_field_id = ?", ticketID, field.ID).Delete(&models.TicketCustomFieldValue{}).Error; err != nil {
+					return err
+				}
+				continue
+			}
+			if !customFieldConditionMet(field.ShowWhenJSON, ctxMap) {
+				continue
+			}
+			if strings.TrimSpace(fmt.Sprint(raw)) == "" {
+				if err := tx.Where("ticket_id = ? AND custom_field_id = ?", ticketID, field.ID).Delete(&models.TicketCustomFieldValue{}).Error; err != nil {
+					return err
+				}
+				continue
+			}
+			normalized, err := normalizeAndValidateCustomFieldValue(field, raw)
+			if err != nil {
+				return fmt.Errorf("custom field %q: %w", k, err)
+			}
+
+			var existing models.TicketCustomFieldValue
+			if err := tx.Where("ticket_id = ? AND custom_field_id = ?", ticketID, field.ID).First(&existing).Error; err != nil {
+				if err == gorm.ErrRecordNotFound {
+					if err := tx.Create(&models.TicketCustomFieldValue{
+						TicketID:      ticketID,
+						CustomFieldID: field.ID,
+						Value:         normalized,
+						CreatedAt:     time.Now(),
+						UpdatedAt:     time.Now(),
+					}).Error; err != nil {
+						return err
+					}
+					continue
+				}
+				return err
+			}
+
+			existing.Value = normalized
+			existing.UpdatedAt = time.Now()
+			if err := tx.Save(&existing).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func customFieldConditionMet(showWhenJSON string, ctx map[string]interface{}) bool {
+	if strings.TrimSpace(showWhenJSON) == "" {
+		return true
+	}
+	// support both {"all":[...],"any":[...]} and [{"field":..,"op":..,"value":..}, ...]
+	var expr customFieldCondition
+	if err := json.Unmarshal([]byte(showWhenJSON), &expr); err == nil && (len(expr.All) > 0 || len(expr.Any) > 0) {
+		return evalCustomFieldCondition(expr, ctx)
+	}
+	var clauses []customFieldClause
+	if err := json.Unmarshal([]byte(showWhenJSON), &clauses); err == nil && len(clauses) > 0 {
+		return evalCustomFieldCondition(customFieldCondition{All: clauses}, ctx)
+	}
+	return false
+}
+
+func evalCustomFieldCondition(expr customFieldCondition, ctx map[string]interface{}) bool {
+	if len(expr.All) == 0 && len(expr.Any) == 0 {
+		return true
+	}
+	for _, c := range expr.All {
+		if !evalCustomFieldClause(c, ctx) {
+			return false
+		}
+	}
+	if len(expr.Any) > 0 {
+		for _, c := range expr.Any {
+			if evalCustomFieldClause(c, ctx) {
+				return true
+			}
+		}
+		return false
+	}
+	return true
+}
+
+func evalCustomFieldClause(c customFieldClause, ctx map[string]interface{}) bool {
+	field := strings.TrimSpace(c.Field)
+	op := strings.TrimSpace(strings.ToLower(c.Op))
+	if field == "" {
+		return true
+	}
+	actual, ok := ctx[field]
+	if !ok && !strings.HasPrefix(field, "ticket.") {
+		actual, ok = ctx["cf."+field]
+	}
+	actualStr := strings.TrimSpace(fmt.Sprint(actual))
+	switch op {
+	case "", "exists":
+		return ok && actualStr != ""
+	case "eq":
+		return ok && actualStr == strings.TrimSpace(fmt.Sprint(c.Value))
+	case "neq":
+		return !ok || actualStr != strings.TrimSpace(fmt.Sprint(c.Value))
+	case "in":
+		if !ok {
+			return false
+		}
+		switch v := c.Value.(type) {
+		case []interface{}:
+			for _, it := range v {
+				if actualStr == strings.TrimSpace(fmt.Sprint(it)) {
+					return true
+				}
+			}
+			return false
+		case string:
+			parts := strings.Split(v, ",")
+			for _, p := range parts {
+				if actualStr == strings.TrimSpace(p) {
+					return true
+				}
+			}
+			return false
+		default:
+			return actualStr == strings.TrimSpace(fmt.Sprint(c.Value))
+		}
+	default:
+		return false
+	}
+}
+
+func normalizeAndValidateCustomFieldValue(field models.CustomField, raw interface{}) (string, error) {
+	typ := strings.TrimSpace(field.Type)
+	switch typ {
+	case "string":
+		s, ok := raw.(string)
+		if !ok {
+			return "", fmt.Errorf("expected string")
+		}
+		s = strings.TrimSpace(s)
+		if err := validateCustomFieldValue(field, s, nil); err != nil {
+			return "", err
+		}
+		return s, nil
+	case "number":
+		n, err := normalizeNumber(raw)
+		if err != nil {
+			return "", err
+		}
+		if err := validateCustomFieldValue(field, "", &n); err != nil {
+			return "", err
+		}
+		return strconv.FormatFloat(n, 'f', -1, 64), nil
+	case "boolean":
+		b, err := normalizeBool(raw)
+		if err != nil {
+			return "", err
+		}
+		if b {
+			return "true", nil
+		}
+		return "false", nil
+	case "date":
+		s, ok := raw.(string)
+		if !ok {
+			return "", fmt.Errorf("expected date string")
+		}
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return "", nil
+		}
+		d, err := normalizeDate(s)
+		if err != nil {
+			return "", err
+		}
+		return d, nil
+	case "select":
+		s, ok := raw.(string)
+		if !ok {
+			return "", fmt.Errorf("expected string")
+		}
+		s = strings.TrimSpace(s)
+		if err := validateAgainstOptions(field.OptionsJSON, s, false); err != nil {
+			return "", err
+		}
+		return s, nil
+	case "multiselect":
+		values, err := normalizeStringListAny(raw)
+		if err != nil {
+			return "", err
+		}
+		for _, v := range values {
+			if err := validateAgainstOptions(field.OptionsJSON, v, false); err != nil {
+				return "", err
+			}
+		}
+		return strings.Join(values, ","), nil
+	default:
+		return "", fmt.Errorf("unsupported type: %s", typ)
+	}
+}
+
+func validateCustomFieldValue(field models.CustomField, rawString string, rawNumber *float64) error {
+	if strings.TrimSpace(field.ValidationJSON) == "" {
+		return nil
+	}
+	var v customFieldValidation
+	if err := json.Unmarshal([]byte(field.ValidationJSON), &v); err != nil {
+		return fmt.Errorf("invalid validation config")
+	}
+	if rawNumber != nil {
+		if v.Min != nil && *rawNumber < *v.Min {
+			return fmt.Errorf("must be >= %v", *v.Min)
+		}
+		if v.Max != nil && *rawNumber > *v.Max {
+			return fmt.Errorf("must be <= %v", *v.Max)
+		}
+		return nil
+	}
+	if v.MinLength != nil && len(rawString) < *v.MinLength {
+		return fmt.Errorf("length must be >= %d", *v.MinLength)
+	}
+	if v.MaxLength != nil && len(rawString) > *v.MaxLength {
+		return fmt.Errorf("length must be <= %d", *v.MaxLength)
+	}
+	if strings.TrimSpace(v.Regex) != "" {
+		re, err := regexp.Compile(v.Regex)
+		if err != nil {
+			return fmt.Errorf("invalid regex")
+		}
+		if !re.MatchString(rawString) {
+			return fmt.Errorf("does not match pattern")
+		}
+	}
+	return nil
+}
+
+func validateAgainstOptions(optionsJSON string, value string, allowEmpty bool) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		if allowEmpty {
+			return nil
+		}
+		return fmt.Errorf("value required")
+	}
+	if strings.TrimSpace(optionsJSON) == "" {
+		return nil
+	}
+	var opts []string
+	if err := json.Unmarshal([]byte(optionsJSON), &opts); err != nil {
+		return fmt.Errorf("invalid options config")
+	}
+	if len(opts) == 0 {
+		return nil
+	}
+	for _, o := range opts {
+		if value == o {
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid option")
+}
+
+func normalizeNumber(v interface{}) (float64, error) {
+	switch t := v.(type) {
+	case float64:
+		return t, nil
+	case float32:
+		return float64(t), nil
+	case int:
+		return float64(t), nil
+	case int64:
+		return float64(t), nil
+	case int32:
+		return float64(t), nil
+	case uint:
+		return float64(t), nil
+	case uint64:
+		return float64(t), nil
+	case json.Number:
+		return t.Float64()
+	case string:
+		s := strings.TrimSpace(t)
+		if s == "" {
+			return 0, fmt.Errorf("empty number")
+		}
+		f, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid number")
+		}
+		return f, nil
+	default:
+		return 0, fmt.Errorf("invalid number")
+	}
+}
+
+func normalizeBool(v interface{}) (bool, error) {
+	switch t := v.(type) {
+	case bool:
+		return t, nil
+	case string:
+		s := strings.ToLower(strings.TrimSpace(t))
+		switch s {
+		case "true", "1", "yes", "y":
+			return true, nil
+		case "false", "0", "no", "n":
+			return false, nil
+		default:
+			return false, fmt.Errorf("invalid boolean")
+		}
+	default:
+		return false, fmt.Errorf("invalid boolean")
+	}
+}
+
+func normalizeDate(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", nil
+	}
+	// prefer yyyy-mm-dd
+	if len(s) == 10 {
+		if _, err := time.Parse("2006-01-02", s); err == nil {
+			return s, nil
+		}
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t.Format("2006-01-02"), nil
+	}
+	return "", fmt.Errorf("invalid date")
+}
+
+func normalizeStringListAny(v interface{}) ([]string, error) {
+	switch t := v.(type) {
+	case []string:
+		out := make([]string, 0, len(t))
+		for _, s := range t {
+			if s = strings.TrimSpace(s); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out, nil
+	case []interface{}:
+		out := make([]string, 0, len(t))
+		for _, it := range t {
+			s, ok := it.(string)
+			if !ok {
+				return nil, fmt.Errorf("expected string")
+			}
+			if s = strings.TrimSpace(s); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out, nil
+	case string:
+		s := strings.TrimSpace(t)
+		if s == "" {
+			return nil, nil
+		}
+		parts := strings.Split(s, ",")
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if p = strings.TrimSpace(p); p != "" {
+				out = append(out, p)
+			}
+		}
+		return out, nil
+	default:
+		return nil, fmt.Errorf("invalid multiselect")
+	}
 }

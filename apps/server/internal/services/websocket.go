@@ -1,19 +1,19 @@
 package services
 
 import (
-    "context"
-    "encoding/json"
-    "fmt"
-    "net/http"
-    "strings"
-    "sync"
-    "time"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
 
-    "github.com/gin-gonic/gin"
-    "github.com/gorilla/websocket"
-    "github.com/sirupsen/logrus"
-    "gorm.io/gorm"
-    "servify/apps/server/internal/models"
+	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
+	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
+	"servify/apps/server/internal/models"
 )
 
 type WebSocketMessage struct {
@@ -32,15 +32,17 @@ type WebSocketClient struct {
 }
 
 type WebSocketHub struct {
-    clients    map[string]*WebSocketClient
-    broadcast  chan WebSocketMessage
-    register   chan *WebSocketClient
-    unregister chan *WebSocketClient
-    mutex      sync.RWMutex
-    // 可选：用于直接在WS层调用AI服务（未设置时则仅广播）
-    aiService  AIServiceInterface
-    // 可选：用于将文本消息落库（如未设置则仅记录日志）
-    db         *gorm.DB
+	clients    map[string]*WebSocketClient
+	broadcast  chan WebSocketMessage
+	register   chan *WebSocketClient
+	unregister chan *WebSocketClient
+	mutex      sync.RWMutex
+	// 可选：用于直接在WS层调用AI服务（未设置时则仅广播）
+	aiService AIServiceInterface
+	// 可选：用于触发“转人工”流程（未设置则仅返回提示）
+	transferService *SessionTransferService
+	// 可选：用于将文本消息落库（如未设置则仅记录日志）
+	db *gorm.DB
 }
 
 var upgrader = websocket.Upgrader{
@@ -50,26 +52,33 @@ var upgrader = websocket.Upgrader{
 }
 
 func NewWebSocketHub() *WebSocketHub {
-    return &WebSocketHub{
-        clients:    make(map[string]*WebSocketClient),
-        broadcast:  make(chan WebSocketMessage),
-        register:   make(chan *WebSocketClient),
-        unregister: make(chan *WebSocketClient),
-    }
+	return &WebSocketHub{
+		clients:    make(map[string]*WebSocketClient),
+		broadcast:  make(chan WebSocketMessage),
+		register:   make(chan *WebSocketClient),
+		unregister: make(chan *WebSocketClient),
+	}
 }
 
 // SetAIService 为WebSocketHub注入AI服务（可选）
 func (h *WebSocketHub) SetAIService(ai AIServiceInterface) {
-    h.mutex.Lock()
-    defer h.mutex.Unlock()
-    h.aiService = ai
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	h.aiService = ai
+}
+
+// SetSessionTransferService 为 WebSocketHub 注入会话转接服务（可选）
+func (h *WebSocketHub) SetSessionTransferService(svc *SessionTransferService) {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	h.transferService = svc
 }
 
 // SetDB 为 WebSocketHub 注入可选的数据库实例，用于持久化消息
 func (h *WebSocketHub) SetDB(db *gorm.DB) {
-    h.mutex.Lock()
-    defer h.mutex.Unlock()
-    h.db = db
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	h.db = db
 }
 
 func (h *WebSocketHub) Run() {
@@ -232,22 +241,22 @@ func (c *WebSocketClient) handleWebRTCOffer(message WebSocketMessage) {
 	// 这里应该调用 WebRTC 服务来处理 offer
 	// 并将 answer 返回给客户端
 	/*
-	if webrtcService != nil {
-		answer, err := webrtcService.HandleOffer(c.SessionID, message.Data)
-		if err != nil {
-			logrus.Errorf("Failed to handle WebRTC offer: %v", err)
-			return
-		}
+		if webrtcService != nil {
+			answer, err := webrtcService.HandleOffer(c.SessionID, message.Data)
+			if err != nil {
+				logrus.Errorf("Failed to handle WebRTC offer: %v", err)
+				return
+			}
 
-		// 发送 answer 回客户端
-		response := WebSocketMessage{
-			Type:      "webrtc-answer",
-			Data:      answer,
-			SessionID: c.SessionID,
-			Timestamp: time.Now(),
+			// 发送 answer 回客户端
+			response := WebSocketMessage{
+				Type:      "webrtc-answer",
+				Data:      answer,
+				SessionID: c.SessionID,
+				Timestamp: time.Now(),
+			}
+			c.Send <- response
 		}
-		c.Send <- response
-	}
 	*/
 
 	// 当前实现：简单转发给同一会话的其他客户端
@@ -281,125 +290,190 @@ func (h *WebSocketHub) GetClientCount() int {
 
 // persistTextMessage 持久化文本消息
 func (c *WebSocketClient) persistTextMessage(message WebSocketMessage) error {
-    // 当前简单实现：记录到日志
-    // 生产环境中应该保存到数据库中的 messages 表
-    logrus.WithFields(logrus.Fields{
-        "session_id": c.SessionID,
-        "client_id":  c.ID,
-        "type":       message.Type,
-        "timestamp":  message.Timestamp,
-    }).Info("Text message persisted")
+	// 当前简单实现：记录到日志
+	// 生产环境中应该保存到数据库中的 messages 表
+	logrus.WithFields(logrus.Fields{
+		"session_id": c.SessionID,
+		"client_id":  c.ID,
+		"type":       message.Type,
+		"timestamp":  message.Timestamp,
+	}).Info("Text message persisted")
 
-    // 若未配置数据库，则直接返回
-    hub := c.Hub
-    hub.mutex.RLock()
-    db := hub.db
-    hub.mutex.RUnlock()
-    if db == nil {
-        return nil
-    }
+	// 若未配置数据库，则直接返回
+	hub := c.Hub
+	hub.mutex.RLock()
+	db := hub.db
+	hub.mutex.RUnlock()
+	if db == nil {
+		return nil
+	}
 
-    // 确保会话存在（以 SessionID 作为主键），若不存在则创建
-    var sess models.Session
-    if err := db.First(&sess, "id = ?", c.SessionID).Error; err != nil {
-        if err == gorm.ErrRecordNotFound {
-            now := time.Now()
-            sess = models.Session{
-                ID:        c.SessionID,
-                Status:    "active",
-                Platform:  "web",
-                StartedAt: now,
-                CreatedAt: now,
-                UpdatedAt: now,
-            }
-            if err := db.Create(&sess).Error; err != nil {
-                return fmt.Errorf("create session: %w", err)
-            }
-        } else {
-            return err
-        }
-    }
+	// 确保会话存在（以 SessionID 作为主键），若不存在则创建
+	var sess models.Session
+	if err := db.First(&sess, "id = ?", c.SessionID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			now := time.Now()
+			sess = models.Session{
+				ID:        c.SessionID,
+				Status:    "active",
+				Platform:  "web",
+				StartedAt: now,
+				CreatedAt: now,
+				UpdatedAt: now,
+			}
+			if err := db.Create(&sess).Error; err != nil {
+				return fmt.Errorf("create session: %w", err)
+			}
+		} else {
+			return err
+		}
+	}
 
-    // 提取文本内容
-    var content string
-    switch v := message.Data.(type) {
-    case map[string]interface{}:
-        if s, ok := v["content"].(string); ok {
-            content = s
-        }
-    case string:
-        content = v
-    default:
-        // 其他格式不处理
-    }
+	// 提取文本内容
+	var content string
+	switch v := message.Data.(type) {
+	case map[string]interface{}:
+		if s, ok := v["content"].(string); ok {
+			content = s
+		}
+	case string:
+		content = v
+	default:
+		// 其他格式不处理
+	}
 
-    // 插入消息记录
-    m := &models.Message{
-        SessionID: c.SessionID,
-        UserID:    0,
-        Content:   content,
-        Type:      "text",
-        Sender:    "user",
-        CreatedAt: time.Now(),
-    }
-    if err := db.Create(m).Error; err != nil {
-        return fmt.Errorf("persist message: %w", err)
-    }
-    return nil
+	// 插入消息记录
+	m := &models.Message{
+		SessionID: c.SessionID,
+		UserID:    0,
+		Content:   content,
+		Type:      "text",
+		Sender:    "user",
+		CreatedAt: time.Now(),
+	}
+	if err := db.Create(m).Error; err != nil {
+		return fmt.Errorf("persist message: %w", err)
+	}
+	return nil
 }
 
 // processMessageWithAI 使用 AI 处理消息
 func (c *WebSocketClient) processMessageWithAI(message WebSocketMessage) {
-    // 若未注入AI服务，直接返回
-    h := c.Hub
-    h.mutex.RLock()
-    ai := h.aiService
-    h.mutex.RUnlock()
-    if ai == nil {
-        logrus.WithFields(logrus.Fields{
-            "session_id":  c.SessionID,
-            "message_type": message.Type,
-        }).Debug("AI service not configured; skipping AI processing")
-        return
-    }
+	// 若未注入AI服务，直接返回
+	h := c.Hub
+	h.mutex.RLock()
+	ai := h.aiService
+	transferSvc := h.transferService
+	db := h.db
+	h.mutex.RUnlock()
+	if ai == nil {
+		logrus.WithFields(logrus.Fields{
+			"session_id":   c.SessionID,
+			"message_type": message.Type,
+		}).Debug("AI service not configured; skipping AI processing")
+		return
+	}
 
-    // 提取文本内容
-    var content string
-    switch v := message.Data.(type) {
-    case map[string]interface{}:
-        if s, ok := v["content"].(string); ok {
-            content = s
-        }
-    case string:
-        content = v
-    default:
-        // 非预期格式
-        logrus.Warnf("Unsupported message data type for AI processing: %T", v)
-        return
-    }
-    if strings.TrimSpace(content) == "" {
-        return
-    }
+	// 提取文本内容
+	var content string
+	switch v := message.Data.(type) {
+	case map[string]interface{}:
+		if s, ok := v["content"].(string); ok {
+			content = s
+		}
+	case string:
+		content = v
+	default:
+		// 非预期格式
+		logrus.Warnf("Unsupported message data type for AI processing: %T", v)
+		return
+	}
+	if strings.TrimSpace(content) == "" {
+		return
+	}
 
-    // 异步调用AI
-    go func(sessionID string, text string) {
-        ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-        defer cancel()
-        resp, err := ai.ProcessQuery(ctx, text, sessionID)
-        if err != nil {
-            logrus.Errorf("AI processing failed: %v", err)
-            return
-        }
-        // 推送AI回复
-        c.Hub.SendToSession(sessionID, WebSocketMessage{
-            Type: "ai-response",
-            Data: map[string]interface{}{
-                "content":    resp.Content,
-                "confidence": resp.Confidence,
-                "source":     resp.Source,
-            },
-            SessionID: sessionID,
-            Timestamp: time.Now(),
-        })
-    }(c.SessionID, content)
+	// 若会话已分配人工客服，则停止 AI 自动回复（避免“人机抢答”）
+	if db != nil {
+		var sess models.Session
+		if err := db.Select("id", "agent_id", "status").First(&sess, "id = ?", c.SessionID).Error; err == nil {
+			if sess.AgentID != nil && sess.Status != "ended" {
+				return
+			}
+		}
+	}
+
+	// 触发“转人工”流程（优先于 AI 正常回答）
+	if transferSvc != nil {
+		var history []models.Message
+		if db != nil {
+			_ = db.Where("session_id = ?", c.SessionID).
+				Order("created_at DESC").
+				Limit(6).
+				Find(&history).Error
+		}
+		if ai.ShouldTransferToHuman(content, history) {
+			go func(sessionID string) {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+
+				result, err := transferSvc.TransferToHuman(ctx, &TransferRequest{
+					SessionID: sessionID,
+					Reason:    "user_request",
+				})
+				if err != nil {
+					c.Hub.SendToSession(sessionID, WebSocketMessage{
+						Type: "ai-response",
+						Data: map[string]interface{}{
+							"content":    "转接人工客服失败：" + err.Error(),
+							"confidence": 1.0,
+							"source":     "system",
+						},
+						SessionID: sessionID,
+						Timestamp: time.Now(),
+					})
+					return
+				}
+
+				respText := "我来为您转接人工客服，请稍等..."
+				if result.IsWaiting {
+					respText = "我来为您转接人工客服，当前暂无可用客服，已进入等待队列。"
+				} else if result.NewAgentID != 0 {
+					respText = fmt.Sprintf("我来为您转接人工客服，已为您分配客服（ID=%d）。", result.NewAgentID)
+				}
+				c.Hub.SendToSession(sessionID, WebSocketMessage{
+					Type: "ai-response",
+					Data: map[string]interface{}{
+						"content":    respText,
+						"confidence": 1.0,
+						"source":     "system",
+					},
+					SessionID: sessionID,
+					Timestamp: time.Now(),
+				})
+			}(c.SessionID)
+			return
+		}
+	}
+
+	// 异步调用AI
+	go func(sessionID string, text string) {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		resp, err := ai.ProcessQuery(ctx, text, sessionID)
+		if err != nil {
+			logrus.Errorf("AI processing failed: %v", err)
+			return
+		}
+		// 推送AI回复
+		c.Hub.SendToSession(sessionID, WebSocketMessage{
+			Type: "ai-response",
+			Data: map[string]interface{}{
+				"content":    resp.Content,
+				"confidence": resp.Confidence,
+				"source":     resp.Source,
+			},
+			SessionID: sessionID,
+			Timestamp: time.Now(),
+		})
+	}(c.SessionID, content)
 }

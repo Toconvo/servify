@@ -97,8 +97,10 @@ func validateHS256JWT(token, secret string, now time.Time) (map[string]interface
 // On success, it injects "user_id" and "roles" into gin.Context for handlers.
 func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 	secret := ""
+	var rbac config.RBACConfig
 	if cfg != nil {
 		secret = cfg.JWT.Secret
+		rbac = cfg.Security.RBAC
 	}
 	return func(c *gin.Context) {
 		ah := c.GetHeader("Authorization")
@@ -147,10 +149,118 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 				c.Set("user_id_raw", uidAny)
 			}
 		}
-		// roles
-		if roles, ok := claims["roles"]; ok {
+
+		roles := normalizeStringList(claims["roles"])
+		if len(roles) > 0 {
 			c.Set("roles", roles)
 		}
+
+		// permissions (RBAC)
+		// - supports explicit claim: perms/permissions
+		// - expands role -> permissions from config.security.rbac.roles
+		perms := normalizeStringList(firstNonNil(claims["perms"], claims["permissions"]))
+		if rbac.Enabled {
+			for _, role := range roles {
+				for _, p := range rbac.Roles[role] {
+					if s := strings.TrimSpace(p); s != "" {
+						perms = append(perms, s)
+					}
+				}
+			}
+		} else {
+			// Backward-compatible defaults when RBAC is not explicitly enabled
+			for _, role := range roles {
+				switch role {
+				case "admin":
+					perms = append(perms, "*")
+				case "agent":
+					perms = append(perms,
+						"tickets.read", "tickets.write",
+						"customers.read",
+						"agents.read",
+						"custom_fields.read",
+						"session_transfer.read", "session_transfer.write",
+						"satisfaction.read", "satisfaction.write",
+						"workspace.read",
+						"macros.read",
+						"integrations.read",
+					)
+				}
+			}
+		}
+		perms = dedupeStrings(perms)
+		if len(perms) > 0 {
+			c.Set("permissions", perms)
+		}
+
 		c.Next()
 	}
+}
+
+func firstNonNil(vals ...interface{}) interface{} {
+	for _, v := range vals {
+		if v != nil {
+			return v
+		}
+	}
+	return nil
+}
+
+func normalizeStringList(v interface{}) []string {
+	switch t := v.(type) {
+	case nil:
+		return nil
+	case []string:
+		out := make([]string, 0, len(t))
+		for _, s := range t {
+			if s = strings.TrimSpace(s); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	case []interface{}:
+		var out []string
+		for _, it := range t {
+			if s, ok := it.(string); ok {
+				if s = strings.TrimSpace(s); s != "" {
+					out = append(out, s)
+				}
+			}
+		}
+		return out
+	case string:
+		if strings.TrimSpace(t) == "" {
+			return nil
+		}
+		parts := strings.Split(t, ",")
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if s := strings.TrimSpace(p); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func dedupeStrings(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	return out
 }

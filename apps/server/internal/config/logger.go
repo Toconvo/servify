@@ -84,7 +84,7 @@ func InitLogger(cfg *Config) error {
 	// 添加调用者信息（可选）
 	logrus.SetReportCaller(true)
 
-	logrus.Infof("Logger initialized - Level: %s, Format: %s, Output: %s", 
+	logrus.Infof("Logger initialized - Level: %s, Format: %s, Output: %s",
 		cfg.Log.Level, cfg.Log.Format, cfg.Log.Output)
 
 	return nil

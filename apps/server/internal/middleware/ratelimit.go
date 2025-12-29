@@ -2,9 +2,9 @@ package middleware
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 	"time"
-	"strings"
 
 	"servify/apps/server/internal/config"
 
@@ -14,11 +14,11 @@ import (
 
 // tokenBucket is a simple leaky bucket (token bucket) implementation for rate limiting.
 type tokenBucket struct {
-	mu        sync.Mutex
-	tokens    float64
+	mu         sync.Mutex
+	tokens     float64
 	lastRefill time.Time
 	ratePerSec float64 // tokens per second
-	burst     float64
+	burst      float64
 }
 
 func newBucket(rpm, burst int) *tokenBucket {

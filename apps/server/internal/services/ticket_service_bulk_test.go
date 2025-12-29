@@ -31,6 +31,8 @@ func newTestDBForTicketService(t *testing.T) *gorm.DB {
 		&models.Agent{},
 		&models.Session{},
 		&models.Ticket{},
+		&models.CustomField{},
+		&models.TicketCustomFieldValue{},
 		&models.TicketStatus{},
 		&models.TicketComment{},
 		&models.TicketFile{},

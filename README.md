@@ -64,7 +64,7 @@ monitoring:
 ### 验收清单（Smoke Test）
 
 1) 启动（本地或 Compose）
-- 本地：`make run-cli CONFIG=./config.weknora.yml` 或 `go run ./apps/server/cmd/server --host=0.0.0.0 --port=8080`
+- 本地：`make run-cli CONFIG=./config.weknora.yml` 或 `go -C apps/server run ./cmd/server --host=0.0.0.0 --port=8080`
 - Compose：`make docker-up-weknora`
 
 2) 健康检查
@@ -104,11 +104,31 @@ curl -s http://localhost:8080/api/v1/webrtc/connections | jq
 - 打开: http://localhost:8080/admin/
 - 功能：仪表板（平台接入、在线客服统计）、工单列表/创建、客户列表/创建、AI 状态与测试
 - 说明：管理类 API 由 `apps/server` 提供，建议使用：
-  - `go run ./apps/server/cmd/server --host=0.0.0.0 --port=8080`（或 `make run-cli` 的增强版本若已接入）
+  - `go -C apps/server run ./cmd/server --host=0.0.0.0 --port=8080`（或 `make run-cli` 的增强版本若已接入）
   - 首次使用请配置数据库并执行迁移（见上文 migrate）
  - 权限提示：
-   - staff（admin/agent）：customers、agents、tickets、session-transfer、satisfaction
+   - staff（admin/agent）：customers、agents、tickets、session-transfer、satisfaction、knowledge（知识库只读）
    - admin-only：statistics（/api/statistics/...）、sla（/api/sla/...）
+
+### 知识库（Public Portal，MVP）
+- 打开: http://localhost:8080/kb.html
+- 公共 API：`GET /public/kb/docs`、`GET /public/kb/docs/:id`
+- 管理 API：`/api/knowledge-docs`（需 JWT + RBAC：`knowledge.read/write`）
+- Portal 配置：`GET /public/portal/config`（品牌色/默认语言；页面支持 `?lang=zh-CN|en-US`）
+
+### AI 建议（MVP）
+- API：`GET /api/assist/suggest?query=...&limit=5&doc_limit=5`（需 JWT + RBAC：`assist.read`）
+- 返回：意图识别（规则）+ 相似工单 + 知识库推荐（基于关键 token 简单匹配）
+
+### 工作流自动化（MVP）
+- 触发器 CRUD：`GET/POST/DELETE /api/automations`（需 JWT + RBAC：`automation.read/write`）
+- 批量执行（含 dry-run）：`POST /api/automations/run`
+- 执行记录：`GET /api/automations/runs`
+
+### 绩效游戏化（MVP）
+- Leaderboard：`GET /api/gamification/leaderboard?days=7&limit=10`（或 `start_date/end_date`）
+- RBAC：`gamification.read`
+- 徽章：解决王（top_resolver）/ 满意之星（customer_hero）/ 极速响应（speedster）
 
 ### 官网（Website）
 - 存放路径：`apps/website/`
@@ -152,15 +172,16 @@ curl -s http://localhost:8080/api/v1/webrtc/connections | jq
   - 请求头：`Authorization: Bearer <token>`
   - 服务端密钥：`config.yml` 中 `jwt.secret`
   - 过期校验：支持 `exp/nbf/iat`（可选）
-  - 上下文注入：`user_id`（若 token 携带 `user_id` 或 `sub`），`roles`（若存在）
-- 角色控制：默认要求 `admin` 或 `agent` 角色
+  - 上下文注入：`user_id`（若 token 携带 `user_id` 或 `sub`），`roles`（若存在），`permissions`（RBAC 计算后）
+- 权限控制（RBAC）：`security.rbac.roles` 将 `roles` 映射到资源级权限（如 `tickets.read` / `tickets.write`）；也可在 token 中直接携带 `perms`
 - 开发调试
   - 可在 `config.yml` 设置 `jwt.secret`，自行签发 token（HS256）
-  - 示例 payload：`{"user_id":1,"roles":["admin"],"exp":<unix_ts>}`
+  - 示例 payload：`{"user_id":1,"roles":["admin"],"perms":["*"],"exp":<unix_ts>}`
   - 使用任意在线工具或脚本生成 HS256 JWT 并测试
   - 或使用 CLI 生成：
     - 构建 CLI：`make build-cli`
     - 生成 token：`./bin/servify-cli token --user-id 1 --roles admin,agent --ttl 120`
+    - 生成带权限的 token：`./bin/servify-cli token --user-id 1 --roles viewer --perms tickets.read --ttl 120`
   - 解析/验证 token：
     - `./bin/servify-cli token-decode --token <JWT>`
     - 验证签名与时间：`./bin/servify-cli token-decode --token <JWT> --verify`（默认使用配置中的 `jwt.secret`，也可 `--secret <key>`）
@@ -691,7 +712,7 @@ cp .env.example .env
 # 编辑 .env 文件，配置数据库和 API 密钥
 
 # 3. 安装依赖
-go mod tidy
+go -C apps/server mod tidy
 
 # 4. 运行数据库迁移（包含测试数据）
 make migrate-seed
@@ -700,7 +721,7 @@ make migrate-seed
 make run
 
 # 或者直接使用 go run
-go run ./apps/server/cmd/server
+go -C apps/server run ./cmd/server
 ```
 
 ### 使用 Makefile 命令

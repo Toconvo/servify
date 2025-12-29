@@ -18,6 +18,7 @@ var (
 	flagUserID   int
 	flagSubject  string
 	flagRoles    string
+	flagPerms    string
 	flagTTLMin   int
 	flagNoExpiry bool
 )
@@ -57,6 +58,18 @@ var tokenCmd = &cobra.Command{
 				payload["roles"] = roles
 			}
 		}
+		if strings.TrimSpace(flagPerms) != "" {
+			parts := strings.Split(flagPerms, ",")
+			var perms []string
+			for _, p := range parts {
+				if s := strings.TrimSpace(p); s != "" {
+					perms = append(perms, s)
+				}
+			}
+			if len(perms) > 0 {
+				payload["perms"] = perms
+			}
+		}
 		if !flagNoExpiry {
 			payload["exp"] = now.Add(time.Duration(flagTTLMin) * time.Minute).Unix()
 		}
@@ -74,6 +87,7 @@ func init() {
 	tokenCmd.Flags().IntVar(&flagUserID, "user-id", 1, "numeric user id to embed in token")
 	tokenCmd.Flags().StringVar(&flagSubject, "sub", "", "subject (sub) claim; defaults to user-id if provided")
 	tokenCmd.Flags().StringVar(&flagRoles, "roles", "admin", "comma-separated roles (e.g. admin,agent)")
+	tokenCmd.Flags().StringVar(&flagPerms, "perms", "", "comma-separated permissions (optional; overrides/extends RBAC mapping)")
 	tokenCmd.Flags().IntVar(&flagTTLMin, "ttl", 60, "token time-to-live in minutes")
 	tokenCmd.Flags().BoolVar(&flagNoExpiry, "no-exp", false, "do not include exp claim")
 }
