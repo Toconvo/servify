@@ -780,6 +780,9 @@ STUN_SERVER=stun:stun.l.google.com:19302  # WebRTC STUN 服务
 - `GET /api/v1/ws` - WebSocket 连接
 - `GET /api/v1/webrtc/stats` - WebRTC 统计信息
 - `GET /api/v1/messages/platforms` - 平台统计
+- `POST /api/v1/ai/query` - AI 智能问答（标准/增强）
+- `GET /api/v1/ai/status` - AI 服务状态（标准/增强）
+- `GET /api/v1/ai/metrics` - AI 指标（增强模式；标准模式返回 404）
 - `POST /api/v1/metrics/ingest` - 客户端/前端轻量指标上报（白名单聚合）
 - `POST /api/v1/upload` - 文件上传（启用时），支持自动抽取文本与索引
 
@@ -792,6 +795,39 @@ STUN_SERVER=stun:stun.l.google.com:19302  # WebRTC STUN 服务
 - 示例：
 ```bash
 curl -F "file=@note.txt" http://localhost:8080/api/v1/upload | jq
+```
+
+#### AI 增强（WeKnora）专用接口
+- `POST /api/v1/ai/knowledge/upload` - 上传文档到 WeKnora（增强）
+- `POST /api/v1/ai/knowledge/sync` - 同步传统知识库到 WeKnora（增强）
+- `PUT /api/v1/ai/weknora/enable` - 动态启用 WeKnora（增强）
+- `PUT /api/v1/ai/weknora/disable` - 动态禁用 WeKnora（增强）
+- `POST /api/v1/ai/circuit-breaker/reset` - 重置熔断器（增强）
+
+#### AI 状态（/api/v1/ai/status）
+- `type`: `standard` 或 `enhanced`
+- `weknora_enabled`: 是否启用了 WeKnora
+- `fallback_enabled`: 是否启用了降级策略
+- `metrics`: 运行期指标（增强模式）
+- 当 WeKnora 启用但不可用时，将包含 `weknora_healthy=false` 与 `weknora_error`
+- 示例：
+```json
+{
+  "success": true,
+  "data": {
+    "type": "enhanced",
+    "weknora_enabled": true,
+    "fallback_enabled": true,
+    "weknora_healthy": false,
+    "weknora_error": "weknora client not initialized",
+    "metrics": {
+      "query_count": 12,
+      "weknora_usage_count": 8,
+      "fallback_usage_count": 4,
+      "average_latency": 0.123
+    }
+  }
+}
 ```
 
 ### v1.1 新增 API 接口
@@ -883,7 +919,8 @@ client.startRemoteAssist();
 ### 开发规范
 1. 遵循 Go 代码规范
 2. 提交前运行测试:
-   - `go -C apps/server test ./...`
+   - `go test ./apps/server/...`（仓库根目录）
+   - 或 `go -C apps/server test ./...`
    - 或 `./scripts/run-tests.sh`（包含覆盖率阈值校验，可通过 `TEST_COVERAGE_TARGET` 覆盖）
 3. 提交信息格式: `feat: 添加新功能` 或 `fix: 修复问题`
 
@@ -904,63 +941,3 @@ client.startRemoteAssist();
 ---
 
 **⭐ 如果这个项目对你有帮助，请给我们一个 Star！**
-- #### AI 增强 (WeKnora) 与上传
-- `POST /api/v1/ai/query` - 智能问答
-- `GET /api/v1/ai/status` - AI 服务状态（标准/增强）
-- `GET /api/v1/ai/metrics` - AI 指标（增强）
-- `POST /api/v1/ai/knowledge/upload` - 上传文档到 WeKnora（增强）
-- `POST /api/v1/ai/knowledge/sync` - 同步传统知识库到 WeKnora（增强）
-- `PUT /api/v1/ai/weknora/enable|disable` - 动态开关 WeKnora（增强）
-- `POST /api/v1/ai/circuit-breaker/reset` - 重置熔断器（增强）
-- #### AI 状态 (Status)
-- `GET /api/v1/ai/status` 返回当前 AI 服务状态与运行信息。响应包含：
-- - `type`: `standard` 或 `enhanced`（WeKnora 集成）
-- - `weknora_enabled`: 是否启用了 WeKnora 集成
-- - `fallback_enabled`: 是否启用了降级策略
-- - `metrics`: 运行期指标（查询次数、平均耗时、WeKnora/Fallback 次数等，增强模式）
-- - 当 WeKnora 启用但不可用时，将包含 `weknora_healthy=false` 与 `weknora_error` 字段
-- 示例：
-- ```json
-- {
--   "success": true,
--   "data": {
--     "type": "enhanced",
--     "weknora_enabled": true,
--     "fallback_enabled": true,
--     "weknora_healthy": false,
--     "weknora_error": "weknora client not initialized",
--     "metrics": {
--       "query_count": 12,
--       "weknora_usage_count": 8,
--       "fallback_usage_count": 4,
--       "average_latency": 0.123
--     }
--   }
-- }
-- ```
-- #### AI 状态 (Status)
-- `GET /api/v1/ai/status` 返回当前 AI 服务状态与运行信息。响应包含：
-- - `type`: `standard` 或 `enhanced`（WeKnora 集成）
-- - `weknora_enabled`: 是否启用了 WeKnora 集成
-- - `fallback_enabled`: 是否启用了降级策略
-- - `metrics`: 运行期指标（查询次数、平均耗时、WeKnora/Fallback 次数等，增强模式）
-- - 当 WeKnora 启用但不可用时，将包含 `weknora_healthy=false` 与 `weknora_error` 字段
-- 示例：
-- ```json
-- {
--   "success": true,
--   "data": {
--     "type": "enhanced",
--     "weknora_enabled": true,
--     "fallback_enabled": true,
--     "weknora_healthy": false,
--     "weknora_error": "weknora client not initialized",
--     "metrics": {
--       "query_count": 12,
--       "weknora_usage_count": 8,
--       "fallback_usage_count": 4,
--       "average_latency": 0.123
--     }
--   }
-- }
-- ```

@@ -110,8 +110,8 @@ func RegisterMacroRoutes(r *gin.RouterGroup, handler *MacroHandler) {
 	{
 		macros.GET("", handler.List)
 		macros.POST("", handler.Create)
-		macros.PUT(":id", handler.Update)
-		macros.DELETE(":id", handler.Delete)
-		macros.POST(":id/apply", handler.Apply)
+		macros.PUT("/:id", handler.Update)
+		macros.DELETE("/:id", handler.Delete)
+		macros.POST("/:id/apply", handler.Apply)
 	}
 }

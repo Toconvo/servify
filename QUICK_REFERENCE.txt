@@ -2,246 +2,200 @@
                     SERVIFY 后台管理系统 - 快速参考
 ================================================================================
 
-DASHBOARD 功能状态检查清单
+ADMIN UI 功能状态检查清单（apps/demo-web/admin）
 ================================================================================
 
-[ ] 1. ADMIN DASHBOARD FUNCTIONALITY
-  [x] Dashboard 仪表板 - 关键指标展示 (会话数、已解决工单、在线客服)
-  [x] Tickets 工单管理 - 列表展示 + 创建表单
-  [x] Customers 客户管理 - 列表展示 + 创建表单
-  [x] Agents 客服管理 - 在线客服列表
-  [x] AI Status - AI 状态 + 查询测试工具
+[x] 1. ADMIN CONSOLE TABS
+  [x] Dashboard - 关键指标 + 图表可视化 + CSV 导出（前端生成）
+  [x] Tickets - 列表/创建/编辑 + 批量操作 + 导出 + 自定义字段
+  [x] Customers - 列表/创建/编辑 + 备注/标签/活动
+  [x] Agents - 在线客服列表 + 负载/绩效统计
+  [x] Session Transfer - 等待队列 + 转接历史 + 手动转接
+  [x] Satisfaction - 满意度评价 + CSAT 调查（含公共答卷）
+  [x] SLA - 配置 + 违约列表 + 统计/趋势图 + CSV 导出（前端生成）
+  [x] Macros - 宏与回复模板（应用到工单评论）
+  [x] Automations - 触发器 CRUD + 批量执行（含 dry-run）+ 执行记录
+  [x] Integrations - 应用市场集成点（列表/启用状态）
+  [x] AI Status - AI 状态 + 查询测试 + WeKnora 开关（增强）
 
-[ ] 2. SERVICE QUALITY MONITORING (QoS)
-  [x] 基础性能指标收集 (响应时间、解决时间、满意度)
-  [x] 每日统计数据 (DailyStats 表)
-  [x] 客服绩效统计
-  [x] 时间范围统计
-  [ ] SLA 定义和监控 ❌ 缺失
-  [ ] SLA 违约告警 ❌ 缺失
-  [ ] QoS 框架 ❌ 缺失
+[x] 2. SERVICE QUALITY / QoS
+  [x] SLA 定义与监控（后台定时检查 + 违约记录）
+  [x] SLA 违约处理（标记已解决 + 统计）
+  [x] CSAT 调查与满意度统计（评分分布/趋势/分类）
+  [x] 指标采集与可观测性（Prometheus `/metrics` + OpenTelemetry 可选）
 
-[ ] 3. TICKET MANAGEMENT SYSTEM
-  [x] 创建工单 (POST /api/tickets)
-  [x] 查询工单 (GET /api/tickets/{id})
-  [x] 列表查询 (GET /api/tickets) - 支持分页、过滤、搜索
-  [x] 更新工单 (PUT /api/tickets/{id})
-  [x] 分配工单 (POST /api/tickets/{id}/assign)
-  [x] 添加评论 (POST /api/tickets/{id}/comments)
-  [x] 关闭工单 (POST /api/tickets/{id}/close)
-  [x] 获取统计 (GET /api/tickets/stats)
-  [x] 工单状态历史追踪
-  [x] 自动分配机制
-  [ ] 工单转移 ❌ 缺失
-  [ ] 批量操作 ❌ 缺失
-  [ ] 工单模板 ❌ 缺失
-
-[ ] 4. CUSTOMER MANAGEMENT
-  [x] 创建客户 (POST /api/customers)
-  [x] 查询客户 (GET /api/customers/{id})
-  [x] 列表查询 (GET /api/customers) - 支持分页、过滤、搜索
-  [x] 更新客户 (PUT /api/customers/{id})
-  [x] 获取活动记录 (GET /api/customers/{id}/activity)
-  [x] 添加备注 (POST /api/customers/{id}/notes)
-  [x] 更新标签 (PUT /api/customers/{id}/tags)
-  [x] 获取统计 (GET /api/customers/stats)
-  [ ] 客户生命周期追踪 ❌ 缺失
-  [ ] 客户满意度历史 ❌ 缺失
-  [ ] 客户分级/价值评估 ❌ 缺失
-
-[ ] 5. AGENT MANAGEMENT SYSTEM
-  [x] 创建客服 (POST /api/agents)
-  [x] 查询客服 (GET /api/agents/{id})
-  [x] 上线/下线 (POST /api/agents/{id}/online|offline)
-  [x] 更新状态 (PUT /api/agents/{id}/status)
-  [x] 获取在线列表 (GET /api/agents/online)
-  [x] 分配会话 (POST /api/agents/{id}/assign-session)
-  [x] 释放会话 (POST /api/agents/{id}/release-session)
-  [x] 查找可用客服 (GET /api/agents/find-available)
-  [x] 获取统计 (GET /api/agents/stats)
-  [x] 实时负载管理
-  [x] 会话队列管理
-  [x] 技能匹配
-  [ ] 班次管理 ❌ 缺失
-  [ ] 绩效实时监控 ❌ 缺失
-  [ ] 技能矩阵 ❌ 缺失
-
-[ ] 6. REPORTS & ANALYTICS
-  [x] 仪表板统计 (GET /api/statistics/dashboard)
-  [x] 时间范围统计 (GET /api/statistics/time-range)
-  [x] 客服绩效统计 (GET /api/statistics/agent-performance)
-  [x] 分类统计 (GET /api/statistics/category)
-  [x] 优先级统计 (GET /api/statistics/priority)
-  [x] 客户来源统计 (GET /api/statistics/customer-source)
-  [x] 每小时自动更新统计数据
-  [ ] 图表可视化 ❌ 缺失
-  [ ] 趋势分析 ❌ 缺失
-  [ ] 报表导出 (PDF/Excel/CSV) ❌ 缺失
-  [ ] 自定义报表 ❌ 缺失
-
-================================================================================
-CRITICAL ISSUES (需立即解决)
-================================================================================
-
-1. 缺少 SLA/QoS 框架
-   优先级: 🔴 高
-   工作量: 2-3 周
-   影响: 无法保证服务质量，无法计算 SLA 达成率
-
-2. 缺少客户满意度评估系统
-   优先级: 🔴 高
-   工作量: 1-2 周
-   影响: 无法量化服务质量，管理层无法基于数据决策
-
-3. 缺少班次管理系统
-   优先级: 🔴 高
-   工作量: 2-3 周
-   影响: 无法有效进行人员规划和资源分配
-
-4. 缺少数据可视化
-   优先级: 🔴 高
-   工作量: 1-2 周
-   影响: 管理员无法直观了解业务状态和趋势
-
-================================================================================
-MEDIUM PRIORITY ISSUES (需逐步改进)
-================================================================================
-
-[ ] 实时更新机制 (WebSocket/SSE) - 工作量: 1 周
-[ ] 工单转移功能 - 工作量: 1 周
-[ ] 批量操作支持 - 工作量: 1 周
-[ ] 权限管理系统 - 工作量: 2 周
-[ ] 高级搜索 - 工作量: 1 周
-[ ] 自定义字段 - 工作量: 2 周
-
-================================================================================
-CODE STATISTICS
-================================================================================
-
-前端代码:        289 行  (HTML 127 + CSS 20 + JS 142)
-后端处理器:    3,446 行  (9 个处理器)
-业务逻辑:     1,200+ 行  (4 个服务类)
-数据模型:      600+ 行  (10+ 个模型)
-总计:         5,500+ 行
-
-技术栈:
-  前端: 原生 HTML5/CSS3/JavaScript (无框架)
-  后端: Go + Gin Framework + GORM
-  数据库: PostgreSQL
-  可观测性: OpenTelemetry + Prometheus
-
-================================================================================
-KEY FILES
-================================================================================
-
-前端:
-  apps/demo-web/admin/index.html          - 仪表板 HTML 模板
-  apps/demo-web/admin/main.js             - 交互逻辑 (142 行)
-  apps/demo-web/admin/style.css           - 样式表
-
-后端处理器:
-  apps/server/internal/handlers/ticket_handler.go       - 工单 API
-  apps/server/internal/handlers/customer_handler.go     - 客户 API
-  apps/server/internal/handlers/agent_handler.go        - 客服 API
-  apps/server/internal/handlers/statistics_handler.go   - 统计 API
-
-业务逻辑:
-  apps/server/internal/services/ticket_service.go       - 工单业务逻辑
-  apps/server/internal/services/customer_service.go     - 客户业务逻辑
-  apps/server/internal/services/agent_service.go        - 客服业务逻辑
-  apps/server/internal/services/statistics_service.go   - 统计业务逻辑
-
-数据模型:
-  apps/server/internal/models/models.go     - 所有数据结构定义
-
-分析报告:
-  /ADMIN_SYSTEM_ANALYSIS.md      - 完整详细分析报告 (630 行)
-  /ADMIN_ANALYSIS_SUMMARY.md     - 执行总结
-  /QUICK_REFERENCE.txt           - 本文件
+[x] 3. REPORTS & ANALYTICS
+  [x] 仪表板统计（/api/statistics/dashboard）
+  [x] 趋势/分布图表（ECharts）
+  [x] CSV 导出（前端生成：工单趋势/满意度趋势/SLA 趋势等）
+  [ ] 自定义报表（按维度组合/保存视图）
+  [ ] PDF/Excel 导出（服务端生成）
 
 ================================================================================
 API ENDPOINT QUICK REFERENCE
 ================================================================================
 
-工单 API:
-  POST   /api/tickets                      创建
-  GET    /api/tickets                      列表
-  GET    /api/tickets/stats                统计
-  GET    /api/tickets/{id}                 详情
-  PUT    /api/tickets/{id}                 更新
-  POST   /api/tickets/{id}/assign          分配
-  POST   /api/tickets/{id}/comments        评论
-  POST   /api/tickets/{id}/close           关闭
+鉴权与权限:
+  - 管理接口：/api/** 需要 JWT（Authorization: Bearer <token>）+ RBAC
+  - 公共接口：/public/** 无需登录
+  - 实时/AI：/api/v1/**（以配置为准）
 
-客户 API:
-  POST   /api/customers                    创建
-  GET    /api/customers                    列表
-  GET    /api/customers/stats              统计
-  GET    /api/customers/{id}               详情
-  PUT    /api/customers/{id}               更新
-  GET    /api/customers/{id}/activity      活动
-  POST   /api/customers/{id}/notes         备注
-  PUT    /api/customers/{id}/tags          标签
+Tickets:
+  POST   /api/tickets
+  POST   /api/tickets/bulk
+  GET    /api/tickets
+  GET    /api/tickets/export
+  GET    /api/tickets/stats
+  GET    /api/tickets/{id}
+  PUT    /api/tickets/{id}
+  POST   /api/tickets/{id}/assign
+  POST   /api/tickets/{id}/comments
+  POST   /api/tickets/{id}/close
 
-客服 API:
-  POST   /api/agents                       创建
-  GET    /api/agents/{id}                  详情
-  GET    /api/agents/online                在线列表
-  GET    /api/agents/stats                 统计
-  GET    /api/agents/find-available        查找可用
-  PUT    /api/agents/{id}/status           更新状态
-  POST   /api/agents/{id}/online           上线
-  POST   /api/agents/{id}/offline          下线
-  POST   /api/agents/{id}/assign-session   分配会话
-  POST   /api/agents/{id}/release-session  释放会话
+Customers:
+  POST   /api/customers
+  GET    /api/customers
+  GET    /api/customers/stats
+  GET    /api/customers/{id}
+  PUT    /api/customers/{id}
+  GET    /api/customers/{id}/activity
+  POST   /api/customers/{id}/notes
+  PUT    /api/customers/{id}/tags
 
-统计 API:
-  GET    /api/statistics/dashboard              仪表板
-  GET    /api/statistics/time-range             时间范围
-  GET    /api/statistics/agent-performance      客服绩效
-  GET    /api/statistics/category               分类统计
-  GET    /api/statistics/priority               优先级统计
-  GET    /api/statistics/customer-source        客户来源
+Agents:
+  POST   /api/agents
+  GET    /api/agents/{id}
+  PUT    /api/agents/{id}/status
+  POST   /api/agents/{id}/online
+  POST   /api/agents/{id}/offline
+  GET    /api/agents/online
+  POST   /api/agents/{id}/assign-session
+  POST   /api/agents/{id}/release-session
+  GET    /api/agents/stats
+  GET    /api/agents/find-available
+
+Session Transfer:
+  POST   /api/session-transfer/to-human
+  POST   /api/session-transfer/to-agent
+  GET    /api/session-transfer/history/{session_id}
+  GET    /api/session-transfer/waiting
+  POST   /api/session-transfer/cancel
+  POST   /api/session-transfer/process-queue
+  POST   /api/session-transfer/check-auto
+
+Satisfaction / CSAT:
+  POST   /api/satisfactions
+  GET    /api/satisfactions
+  GET    /api/satisfactions/stats
+  GET    /api/satisfactions/surveys
+  POST   /api/satisfactions/surveys/{id}/resend
+  GET    /api/tickets/{ticket_id}/satisfaction
+  GET    /public/csat/{token}
+  POST   /public/csat/{token}/respond
+
+SLA:
+  POST   /api/sla/configs
+  GET    /api/sla/configs
+  GET    /api/sla/configs/{id}
+  PUT    /api/sla/configs/{id}
+  DELETE /api/sla/configs/{id}
+  GET    /api/sla/configs/priority/{priority}
+  GET    /api/sla/violations
+  POST   /api/sla/violations/{id}/resolve
+  GET    /api/sla/stats
+  POST   /api/sla/check/ticket/{ticket_id}
+
+Statistics:
+  GET    /api/statistics/dashboard
+  GET    /api/statistics/time-range
+  GET    /api/statistics/agent-performance
+  GET    /api/statistics/ticket-category
+  GET    /api/statistics/ticket-priority
+  GET    /api/statistics/customer-source
+  POST   /api/statistics/update-daily
+
+Macros:
+  GET    /api/macros
+  POST   /api/macros
+  PUT    /api/macros/{id}
+  DELETE /api/macros/{id}
+  POST   /api/macros/{id}/apply
+
+Automations:
+  GET    /api/automations
+  POST   /api/automations
+  DELETE /api/automations/{id}
+  POST   /api/automations/run
+  GET    /api/automations/runs
+
+Custom Fields:
+  GET    /api/custom-fields
+  POST   /api/custom-fields
+  GET    /api/custom-fields/{id}
+  PUT    /api/custom-fields/{id}
+  DELETE /api/custom-fields/{id}
+
+Knowledge Base:
+  GET    /api/knowledge-docs
+  POST   /api/knowledge-docs
+  GET    /api/knowledge-docs/{id}
+  PUT    /api/knowledge-docs/{id}
+  DELETE /api/knowledge-docs/{id}
+  GET    /public/kb/docs
+  GET    /public/kb/docs/{id}
+  GET    /public/portal/config
+
+Assist:
+  GET    /api/assist/suggest
+  POST   /api/assist/suggest
+
+Gamification:
+  GET    /api/gamification/leaderboard
+
+Shifts (API only):
+  POST   /api/shifts
+  GET    /api/shifts
+  PUT    /api/shifts/{id}
+  DELETE /api/shifts/{id}
+  GET    /api/shifts/stats
+
+AI / Realtime (v1):
+  GET    /api/v1/ws
+  GET    /api/v1/ws/stats
+  GET    /api/v1/webrtc/stats
+  GET    /api/v1/webrtc/connections
+  POST   /api/v1/ai/query
+  GET    /api/v1/ai/status
+  GET    /api/v1/ai/metrics
+  POST   /api/v1/ai/knowledge/upload
+  POST   /api/v1/ai/knowledge/sync
+  PUT    /api/v1/ai/weknora/enable
+  PUT    /api/v1/ai/weknora/disable
+  POST   /api/v1/ai/circuit-breaker/reset
 
 ================================================================================
-RECOMMENDATIONS
+CODE STATISTICS（approx）
 ================================================================================
 
-立即 (本周):
-  [ ] 阅读 ADMIN_SYSTEM_ANALYSIS.md 完整报告
-  [ ] 确定高优先级功能实现顺序
-  [ ] 制定详细实现计划
+Admin UI:
+  apps/demo-web/admin/index.html   805 行
+  apps/demo-web/admin/style.css    552 行
+  apps/demo-web/admin/main.js      3062 行
 
-短期 (1-2 周):
-  [ ] 实现客户满意度评估系统
-  [ ] 添加前端图表可视化
-  [ ] 建立 SLA 定义框架
-
-中期 (2-4 周):
-  [ ] 实现班次管理系统
-  [ ] 完善工单流程
-  [ ] 增强权限控制
+Server（约，含测试文件）:
+  apps/server/internal/handlers    7270 行
+  apps/server/internal/services   11041 行
+  apps/server/internal/models      407 行
 
 ================================================================================
-OVERALL ASSESSMENT
+OPEN ITEMS（建议下一步）
 ================================================================================
 
-评分:        7/10
-状态:        稳定的 MVP，可用于生产环境
-建议:        逐步完善高优先级功能
-
-优势:
-  ✅ 核心功能完整实现 (工单、客户、客服)
-  ✅ 代码质量好，结构清晰
-  ✅ API 设计规范，易于扩展
-  ✅ 后端性能高效
-
-弱点:
-  ⚠️ 前端简单，缺少可视化
-  ⚠️ 没有 SLA/QoS 管理
-  ⚠️ 人员管理功能不足
-  ⚠️ 缺少实时更新能力
+[ ] 管理后台实时更新（SSE/WebSocket 推送统计与队列变化）
+[ ] 自定义报表（保存过滤器/维度组合）+ 服务器端导出（PDF/Excel）
+[ ] Shift UI（排班/假期/冲突校验）与权限收敛
+[ ] 审计日志（关键动作：登录、批量操作、SLA/自动化执行）
 
 ================================================================================
-最后更新: 2024-11-05
-分析工具: Claude Code (Haiku 4.5)
+最后更新: 2025-12-30
+================================================================================

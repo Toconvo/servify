@@ -3,8 +3,8 @@
 面向“能跑 + 可验收 + 可持续迭代”的待办清单（工程优先，其次产品能力对标）。
 
 ## 当前进度（快速结论）
-- Go workspace：`go.work` 仅包含 `./apps/server`（根目录不能直接 `go test ./...`）
-- 单测：`go -C apps/server test ./...` 通过
+- Go workspace：`go.work` 包含根模块 `.` + `./apps/server`（根目录可直接 `go test ./apps/server/...`，或 `go -C apps/server test ./...`）
+- 单测：`go test ./apps/server/...` 或 `go -C apps/server test ./...` 通过
 - 测试脚本：`./scripts/run-tests.sh` 通过（覆盖率阈值 >= 20%）
 - 代码内未发现额外 TODO/FIXME 标记（目前只在本文件中）
 
@@ -38,7 +38,7 @@
 ### Freshdesk（待补齐）
 - [x] 自助服务门户 / 知识库（MVP：`/public/kb/docs` + `kb.html` 公共页；`/api/knowledge-docs` 管理 CRUD）
 - [x] AI 建议（MVP：`/api/assist/suggest` 意图识别 + 相似工单 + 知识库推荐）
-- [ ] 动态表单与自定义字段
+- [x] 动态表单与自定义字段
 - [x] 工作流自动化（MVP：触发器 + `POST /api/automations/run` 批量执行 + `GET /api/automations/runs` 审计）
 - [x] 多语言 & 品牌门户（MVP：`/public/portal/config` + `kb.html`/`satisfaction.html` 支持 `?lang=zh-CN|en-US` + 动态品牌色）
 - [x] 绩效游戏化（MVP：`GET /api/gamification/leaderboard` + 徽章：解决王/满意之星/极速响应）
