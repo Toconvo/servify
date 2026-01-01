@@ -42,9 +42,6 @@ func newTestDBForTicketService(t *testing.T) *gorm.DB {
 	return db
 }
 
-func strPtr(s string) *string { return &s }
-func uintPtr(v uint) *uint    { return &v }
-
 func TestTicketService_Assign_Transfer_Unassign(t *testing.T) {
 	db := newTestDBForTicketService(t)
 
@@ -129,7 +126,7 @@ func TestTicketService_BulkUpdateTickets_Status_Tags_Assign(t *testing.T) {
 
 	_, err := svc.BulkUpdateTickets(ctx, &TicketBulkUpdateRequest{
 		TicketIDs:  []uint{2},
-		Status:     strPtr("resolved"),
+		Status:     stringPtr("resolved"),
 		AddTags:    []string{"c"},
 		RemoveTags: []string{"a"},
 		AgentID:    uintPtr(2),
