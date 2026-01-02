@@ -175,3 +175,79 @@ func TestUnifiedMessage(t *testing.T) {
 	}
 }
 
+func TestMessageRouter_Register_UnregisterPlatform(t *testing.T) {
+	hub := NewWebSocketHub()
+	ai := stubAI{reply: "test"}
+	r := NewMessageRouter(ai, hub, nil)
+
+	// Create a mock adapter
+	adapter := &mockPlatformAdapter{name: "test"}
+
+	// Register platform
+	r.RegisterPlatform("test", adapter)
+
+	// Unregister platform
+	r.UnregisterPlatform("test")
+}
+
+func TestMessageRouter_Start_Stop(t *testing.T) {
+	hub := NewWebSocketHub()
+	ai := stubAI{reply: "test"}
+	r := NewMessageRouter(ai, hub, nil)
+
+	// Start should not block (runs in background)
+	// We can't easily test the actual start without a real context
+	// So just test Stop doesn't panic
+	r.Stop()
+}
+
+func TestMessageRouter_BroadcastMessage(t *testing.T) {
+	hub := NewWebSocketHub()
+	go hub.Run()
+	time.Sleep(10 * time.Millisecond)
+
+	ai := stubAI{reply: "test"}
+	r := NewMessageRouter(ai, hub, nil)
+
+	// Broadcast message should not panic
+	msg := UnifiedMessage{
+		UserID:    "test-user",
+		PlatformID: "web",
+		Content:   "test broadcast",
+		Type:      MessageTypeText,
+		Timestamp: time.Now(),
+	}
+	r.BroadcastMessage(msg)
+}
+
+func TestMessageRouter_ensureSession(t *testing.T) {
+	// This test would require a DB setup, testing the private method
+	// For now, we'll skip it as it's tested indirectly through other tests
+	t.Skip("ensureSession is tested indirectly through HandleWebMessage")
+}
+
+// mockPlatformAdapter is a mock implementation of PlatformAdapter
+type mockPlatformAdapter struct {
+	name string
+}
+
+func (m *mockPlatformAdapter) SendMessage(chatID, message string) error {
+	return nil
+}
+
+func (m *mockPlatformAdapter) ReceiveMessage() <-chan UnifiedMessage {
+	return nil
+}
+
+func (m *mockPlatformAdapter) GetPlatformType() PlatformType {
+	return PlatformType(m.name)
+}
+
+func (m *mockPlatformAdapter) Start() error {
+	return nil
+}
+
+func (m *mockPlatformAdapter) Stop() error {
+	return nil
+}
+

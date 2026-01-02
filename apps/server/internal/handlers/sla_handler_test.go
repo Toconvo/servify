@@ -111,3 +111,145 @@ func TestSLAHandler_Create_And_List(t *testing.T) {
 		t.Fatalf("delete status=%d body=%s", w5.Code, w5.Body.String())
 	}
 }
+
+func TestSLAHandler_GetSLAConfigByPriority_NotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := newTestDBForSLA(t)
+	logger := logrus.New()
+	logger.SetLevel(logrus.WarnLevel)
+
+	svc := services.NewSLAService(db, logger)
+	h := NewSLAHandler(svc, nil)
+
+	r := gin.New()
+	r.GET("/api/sla/configs/priority/:priority", h.GetSLAConfigByPriority)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/api/sla/configs/priority/normal", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSLAHandler_GetSLAConfigByPriority_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := newTestDBForSLA(t)
+	logger := logrus.New()
+	logger.SetLevel(logrus.WarnLevel)
+
+	svc := services.NewSLAService(db, logger)
+	h := NewSLAHandler(svc, nil)
+
+	r := gin.New()
+	r.GET("/api/sla/configs/priority/:priority", h.GetSLAConfigByPriority)
+
+	// Create a config first
+	config := &models.SLAConfig{
+		Name:              "test-normal",
+		Priority:          "normal",
+		FirstResponseTime: 30,
+		ResolutionTime:    240,
+		EscalationTime:    60,
+	}
+	db.Create(config)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/api/sla/configs/priority/normal", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSLAHandler_ListSLAViolations_Empty(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := newTestDBForSLA(t)
+	logger := logrus.New()
+	logger.SetLevel(logrus.WarnLevel)
+
+	svc := services.NewSLAService(db, logger)
+	h := NewSLAHandler(svc, nil)
+
+	r := gin.New()
+	r.GET("/api/sla/violations", h.ListSLAViolations)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/api/sla/violations?page=1&page_size=10", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSLAHandler_ResolveSLAViolation_NotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := newTestDBForSLA(t)
+	logger := logrus.New()
+	logger.SetLevel(logrus.WarnLevel)
+
+	svc := services.NewSLAService(db, logger)
+	h := NewSLAHandler(svc, nil)
+
+	r := gin.New()
+	r.POST("/api/sla/violations/:id/resolve", h.ResolveSLAViolation)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/api/sla/violations/999/resolve", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSLAHandler_ResolveSLAViolation_InvalidID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := newTestDBForSLA(t)
+	logger := logrus.New()
+	logger.SetLevel(logrus.WarnLevel)
+
+	svc := services.NewSLAService(db, logger)
+	h := NewSLAHandler(svc, nil)
+
+	r := gin.New()
+	r.POST("/api/sla/violations/:id/resolve", h.ResolveSLAViolation)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/api/sla/violations/invalid/resolve", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSLAHandler_GetSLAStats(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := newTestDBForSLA(t)
+	logger := logrus.New()
+	logger.SetLevel(logrus.WarnLevel)
+
+	svc := services.NewSLAService(db, logger)
+	h := NewSLAHandler(svc, nil)
+
+	r := gin.New()
+	r.GET("/api/sla/stats", h.GetSLAStats)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/api/sla/stats", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", w.Code, w.Body.String())
+	}
+}

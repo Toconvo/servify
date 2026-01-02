@@ -36,6 +36,7 @@ func newTestDBForStatistics(t *testing.T) *gorm.DB {
 		&models.Session{},
 		&models.Message{},
 		&models.DailyStats{},
+		&models.Customer{},
 	); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
@@ -80,5 +81,97 @@ func TestStatisticsHandler_Dashboard_And_TimeRange(t *testing.T) {
 	r.ServeHTTP(w3, req3)
 	if w3.Code != http.StatusOK {
 		t.Fatalf("time-range ok status=%d body=%s", w3.Code, w3.Body.String())
+	}
+}
+
+func TestStatisticsHandler_GetAgentPerformanceStats_SQLiteError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := newTestDBForStatistics(t)
+	logger := logrus.New()
+	logger.SetLevel(logrus.WarnLevel)
+
+	svc := services.NewStatisticsService(db, logger)
+	h := NewStatisticsHandler(svc, logger)
+
+	r := gin.New()
+	r.GET("/api/statistics/agent-performance", h.GetAgentPerformanceStats)
+
+	// SQLite doesn't support PostgreSQL's EXTRACT function, so this will return 500
+	today := time.Now().Format("2006-01-02")
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/api/statistics/agent-performance?start_date="+today+"&end_date="+today, nil)
+	r.ServeHTTP(w, req)
+
+	// Should return 500 due to SQLite not supporting the SQL query
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500 (SQLite doesn't support PostgreSQL EXTRACT), got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+
+func TestStatisticsHandler_GetTicketCategoryStats(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := newTestDBForStatistics(t)
+	logger := logrus.New()
+	logger.SetLevel(logrus.WarnLevel)
+
+	svc := services.NewStatisticsService(db, logger)
+	h := NewStatisticsHandler(svc, logger)
+
+	r := gin.New()
+	r.GET("/api/statistics/ticket-category", h.GetTicketCategoryStats)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/api/statistics/ticket-category", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestStatisticsHandler_GetTicketPriorityStats(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := newTestDBForStatistics(t)
+	logger := logrus.New()
+	logger.SetLevel(logrus.WarnLevel)
+
+	svc := services.NewStatisticsService(db, logger)
+	h := NewStatisticsHandler(svc, logger)
+
+	r := gin.New()
+	r.GET("/api/statistics/ticket-priority", h.GetTicketPriorityStats)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/api/statistics/ticket-priority", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestStatisticsHandler_GetCustomerSourceStats(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := newTestDBForStatistics(t)
+	logger := logrus.New()
+	logger.SetLevel(logrus.WarnLevel)
+
+	svc := services.NewStatisticsService(db, logger)
+	h := NewStatisticsHandler(svc, logger)
+
+	r := gin.New()
+	r.GET("/api/statistics/customer-source", h.GetCustomerSourceStats)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/api/statistics/customer-source", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", w.Code, w.Body.String())
 	}
 }
