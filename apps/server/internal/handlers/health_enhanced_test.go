@@ -44,3 +44,85 @@ func TestEnhancedHealthHandler_Health_And_Ready(t *testing.T) {
 		t.Fatalf("ready status=%d body=%s", w2.Code, w2.Body.String())
 	}
 }
+
+func TestEnhancedHealthHandler_Health_WithDatabaseCheck(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := config.GetDefaultConfig()
+	// Enable database check to increase coverage
+	cfg.Monitoring.HealthChecks.Database = true
+	cfg.Monitoring.HealthChecks.Redis = false
+	cfg.Monitoring.HealthChecks.WeKnora = false
+
+	ai := services.NewAIService("", "")
+	ai.InitializeKnowledgeBase()
+
+	h := NewEnhancedHealthHandler(cfg, ai)
+
+	r := gin.New()
+	r.GET("/health", h.Health)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/health", nil)
+	r.ServeHTTP(w, req)
+
+	// Should return 200 even without actual DB (simulated)
+	if w.Code != http.StatusOK {
+		t.Fatalf("health status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestEnhancedHealthHandler_Health_WithRedisCheck(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := config.GetDefaultConfig()
+	// Enable redis check to increase coverage
+	cfg.Monitoring.HealthChecks.Database = false
+	cfg.Monitoring.HealthChecks.Redis = true
+	cfg.Monitoring.HealthChecks.WeKnora = false
+
+	ai := services.NewAIService("", "")
+	ai.InitializeKnowledgeBase()
+
+	h := NewEnhancedHealthHandler(cfg, ai)
+
+	r := gin.New()
+	r.GET("/health", h.Health)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/health", nil)
+	r.ServeHTTP(w, req)
+
+	// Should return 200 even without actual Redis (simulated)
+	if w.Code != http.StatusOK {
+		t.Fatalf("health status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestEnhancedHealthHandler_Health_WithWeKnoraCheck(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := config.GetDefaultConfig()
+	// Enable weknora check to increase coverage
+	cfg.Monitoring.HealthChecks.Database = false
+	cfg.Monitoring.HealthChecks.Redis = false
+	cfg.Monitoring.HealthChecks.WeKnora = true
+	cfg.WeKnora.Enabled = true
+
+	ai := services.NewAIService("", "")
+	ai.InitializeKnowledgeBase()
+
+	h := NewEnhancedHealthHandler(cfg, ai)
+
+	r := gin.New()
+	r.GET("/health", h.Health)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/health", nil)
+	r.ServeHTTP(w, req)
+
+	// Should return 200
+	if w.Code != http.StatusOK {
+		t.Fatalf("health status=%d body=%s", w.Code, w.Body.String())
+	}
+}
