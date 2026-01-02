@@ -27,7 +27,9 @@ Thumbs.db
 *.temp
 
 # 测试覆盖率
-coverage.out
+# go test 常见产物/覆盖率文件
+*.test
+*coverage*.out
 # 备份文件
 *.bak
 

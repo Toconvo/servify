@@ -35,6 +35,7 @@ func newTestDBForCustomers(t *testing.T) *gorm.DB {
 		&models.Customer{},
 		&models.Session{},
 		&models.Ticket{},
+		&models.Message{},
 	); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
@@ -109,3 +110,123 @@ func TestCustomerHandler_Create_Get_Update_List(t *testing.T) {
 		t.Fatalf("list status=%d body=%s", w4.Code, w4.Body.String())
 	}
 }
+
+func TestCustomerHandler_GetCustomerActivity(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := newTestDBForCustomers(t)
+	logger := logrus.New()
+	logger.SetLevel(logrus.WarnLevel)
+
+	svc := services.NewCustomerService(db, logger)
+	h := NewCustomerHandler(svc, logger)
+
+	r := gin.New()
+	r.GET("/api/customers/:id/activity", h.GetCustomerActivity)
+
+	// Create customer
+	user := &models.User{Username: "test", Email: "test@example.com", Name: "Test", Role: "customer"}
+	db.Create(user)
+	customer := &models.Customer{UserID: user.ID, Company: "TestCo"}
+	db.Create(customer)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/api/customers/1/activity", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCustomerHandler_AddCustomerNote(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := newTestDBForCustomers(t)
+	logger := logrus.New()
+	logger.SetLevel(logrus.WarnLevel)
+
+	svc := services.NewCustomerService(db, logger)
+	h := NewCustomerHandler(svc, logger)
+
+	r := gin.New()
+	// 添加中间件来设置user_id
+	r.Use(func(c *gin.Context) {
+		c.Set("user_id", uint(1))
+		c.Next()
+	})
+	r.POST("/api/customers/:id/notes", h.AddCustomerNote)
+
+	// Create customer
+	user := &models.User{Username: "test2", Email: "test2@example.com", Name: "Test", Role: "customer"}
+	db.Create(user)
+	customer := &models.Customer{UserID: user.ID, Company: "TestCo"}
+	db.Create(customer)
+
+	payload := map[string]string{"note": "Test note"}
+	body, _ := json.Marshal(payload)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/api/customers/1/notes", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCustomerHandler_UpdateCustomerTags(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := newTestDBForCustomers(t)
+	logger := logrus.New()
+	logger.SetLevel(logrus.WarnLevel)
+
+	svc := services.NewCustomerService(db, logger)
+	h := NewCustomerHandler(svc, logger)
+
+	r := gin.New()
+	r.PUT("/api/customers/:id/tags", h.UpdateCustomerTags)
+
+	// Create customer
+	user := &models.User{Username: "test3", Email: "test3@example.com", Name: "Test", Role: "customer"}
+	db.Create(user)
+	customer := &models.Customer{UserID: user.ID, Company: "TestCo"}
+	db.Create(customer)
+
+	payload := map[string]interface{}{"tags": []string{"vip", "enterprise"}}
+	body, _ := json.Marshal(payload)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPut, "/api/customers/1/tags", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCustomerHandler_GetCustomerStats(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := newTestDBForCustomers(t)
+	logger := logrus.New()
+	logger.SetLevel(logrus.WarnLevel)
+
+	svc := services.NewCustomerService(db, logger)
+	h := NewCustomerHandler(svc, logger)
+
+	r := gin.New()
+	r.GET("/api/customers/stats", h.GetCustomerStats)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/api/customers/stats", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+

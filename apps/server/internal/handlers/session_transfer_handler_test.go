@@ -117,3 +117,157 @@ func TestSessionTransferHandler_ListWaiting_And_Cancel(t *testing.T) {
 		t.Fatalf("expected cancelled got %s", wr.Status)
 	}
 }
+
+func TestSessionTransferHandler_TransferToHuman(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := newTestDBForSessionTransferHandler(t)
+	logger := logrus.New()
+	logger.SetLevel(logrus.WarnLevel)
+
+	if err := db.Create(&models.User{ID: 1, Username: "u1", Name: "u1", Email: "u1@example.com", Role: "customer"}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	now := time.Now()
+	if err := db.Create(&models.Session{ID: "s1", UserID: 1, Status: "active", Platform: "web", StartedAt: now, CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	agentSvc := services.NewAgentService(db, logger)
+	transferSvc := services.NewSessionTransferService(db, logger, stubAIForTransferHandler{}, agentSvc, nil)
+	h := NewSessionTransferHandler(transferSvc, logger)
+
+	r := gin.New()
+	r.POST("/session-transfer/to-human", h.TransferToHuman)
+
+	payload := map[string]string{
+		"session_id": "s1",
+		"reason":     "customer_request",
+	}
+	body, _ := json.Marshal(payload)
+
+	req := httptest.NewRequest("POST", "/session-transfer/to-human", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSessionTransferHandler_GetTransferHistory(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := newTestDBForSessionTransferHandler(t)
+	logger := logrus.New()
+	logger.SetLevel(logrus.WarnLevel)
+
+	if err := db.Create(&models.User{ID: 1, Username: "u1", Name: "u1", Email: "u1@example.com", Role: "customer"}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	now := time.Now()
+	if err := db.Create(&models.Session{ID: "s1", UserID: 1, Status: "active", Platform: "web", StartedAt: now, CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	agentSvc := services.NewAgentService(db, logger)
+	transferSvc := services.NewSessionTransferService(db, logger, stubAIForTransferHandler{}, agentSvc, nil)
+	h := NewSessionTransferHandler(transferSvc, logger)
+
+	r := gin.New()
+	r.GET("/session-transfer/history/:session_id", h.GetTransferHistory)
+
+	req := httptest.NewRequest("GET", "/session-transfer/history/s1", nil)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+}
+
+func TestSessionTransferHandler_ProcessWaitingQueue(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := newTestDBForSessionTransferHandler(t)
+	logger := logrus.New()
+	logger.SetLevel(logrus.WarnLevel)
+
+	if err := db.Create(&models.User{ID: 1, Username: "u1", Name: "u1", Email: "u1@example.com", Role: "customer"}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if err := db.Create(&models.User{ID: 2, Username: "agent1", Name: "Agent", Email: "agent@example.com", Role: "agent"}).Error; err != nil {
+		t.Fatalf("seed agent user: %v", err)
+	}
+	if err := db.Create(&models.Agent{ID: 1, UserID: 2, Status: "online", MaxConcurrent: 5, CurrentLoad: 0}).Error; err != nil {
+		t.Fatalf("seed agent: %v", err)
+	}
+
+	now := time.Now()
+	if err := db.Create(&models.Session{ID: "s1", UserID: 1, Status: "active", Platform: "web", StartedAt: now, CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+	if err := db.Create(&models.WaitingRecord{SessionID: "s1", Reason: "test", Priority: "normal", Status: "waiting", QueuedAt: now, CreatedAt: now}).Error; err != nil {
+		t.Fatalf("seed waiting: %v", err)
+	}
+
+	agentSvc := services.NewAgentService(db, logger)
+	transferSvc := services.NewSessionTransferService(db, logger, stubAIForTransferHandler{}, agentSvc, nil)
+	h := NewSessionTransferHandler(transferSvc, logger)
+
+	r := gin.New()
+	r.POST("/session-transfer/process-queue", h.ProcessWaitingQueue)
+
+	req := httptest.NewRequest("POST", "/session-transfer/process-queue", nil)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSessionTransferHandler_CheckAutoTransfer(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := newTestDBForSessionTransferHandler(t)
+	logger := logrus.New()
+	logger.SetLevel(logrus.WarnLevel)
+
+	if err := db.Create(&models.User{ID: 1, Username: "u1", Name: "u1", Email: "u1@example.com", Role: "customer"}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	now := time.Now()
+	if err := db.Create(&models.Session{ID: "s1", UserID: 1, Status: "active", Platform: "web", StartedAt: now, CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	agentSvc := services.NewAgentService(db, logger)
+	transferSvc := services.NewSessionTransferService(db, logger, stubAIForTransferHandler{}, agentSvc, nil)
+	h := NewSessionTransferHandler(transferSvc, logger)
+
+	r := gin.New()
+	r.POST("/session-transfer/check-auto-transfer", h.CheckAutoTransfer)
+
+	payload := map[string]interface{}{
+		"session_id": "s1",
+		"messages": []map[string]string{
+			{"content": "I need help", "sender": "customer"},
+		},
+	}
+	body, _ := json.Marshal(payload)
+
+	req := httptest.NewRequest("POST", "/session-transfer/check-auto-transfer", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+}
